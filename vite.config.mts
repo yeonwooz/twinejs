@@ -5,6 +5,7 @@ import checker from 'vite-plugin-checker';
 import {nodePolyfills} from 'vite-plugin-node-polyfills';
 import {VitePWA} from 'vite-plugin-pwa';
 import packageJson from './package.json';
+import {notionSync} from './vite-plugin-notion-sync';
 
 export default defineConfig({
 	base: './',
@@ -31,6 +32,7 @@ export default defineConfig({
 			{include: [], globals: {global: true}}
 		),
 		react(),
+		notionSync(),
 		VitePWA({
 			manifest: {
 				icons: [
