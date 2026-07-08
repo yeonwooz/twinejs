@@ -2,7 +2,8 @@
 // /__notion-sync/ middleware (see vite-plugin-notion-sync.ts at the repo
 // root). This is a companion to local storage persistence, not a replacement:
 // local storage stays the fast working copy, and Notion receives debounced
-// snapshots in twee format.
+// snapshots in twee format. On load, stories edited directly in Notion since
+// the last local edit are pulled back in (see mergeStoriesFromNotion).
 //
 // When the middleware isn't present (production builds, Electron, or a dev
 // server without a token configured), the first status check disables sync
@@ -153,47 +154,115 @@ export function notionSaveMiddleware(
 	}
 }
 
+export interface RemoteStory {
+	lastEdited: string | null;
+	lastSynced: string | null;
+	storyId: string;
+	twee: string;
+}
+
 /**
- * Loads stories from Notion, for use when local storage is empty--for
- * example, after clearing browser data or opening the editor in a different
- * browser.
+ * The most recent timestamp we have for the Notion copy of a story.
+ * `lastEdited` is Notion's own edit time but is rounded to the minute;
+ * `lastSynced` is set with full precision on every push. Taking the max means
+ * edits made directly in Notion count even if the editor didn't bump Last
+ * Synced.
  */
-export async function restoreStoriesFromNotion(): Promise<Story[]> {
+function remoteTimestamp(remote: RemoteStory): Date | undefined {
+	const times = [remote.lastEdited, remote.lastSynced]
+		.map(value => (value ? Date.parse(value) : NaN))
+		.filter(time => !isNaN(time));
+
+	return times.length > 0 ? new Date(Math.max(...times)) : undefined;
+}
+
+function remoteToStory(remote: RemoteStory): Story {
+	const story = storyFromTwee(remote.twee);
+	const timestamp = remoteTimestamp(remote);
+
+	// Keep the original story ID so future syncs update the same Notion page.
+
+	return {
+		...story,
+		id: remote.storyId,
+		lastUpdate: timestamp ?? story.lastUpdate,
+		passages: story.passages.map(passage => ({
+			...passage,
+			story: remote.storyId
+		}))
+	};
+}
+
+/**
+ * Merges stories synced to Notion into locally-loaded ones. Stories that only
+ * exist in Notion are added; a story that exists on both sides is replaced by
+ * the Notion copy only when its content actually differs and the Notion copy
+ * is newer than the local one. Content is compared after normalizing both
+ * sides to twee, so the snapshot created by our own last push--whose
+ * timestamp always trails the local edit slightly--never wins spuriously.
+ */
+export function mergeRemoteStories(
+	localStories: StoriesState,
+	remoteStories: RemoteStory[]
+): Story[] {
+	const result = [...localStories];
+
+	for (const remote of remoteStories) {
+		let incoming: Story;
+
+		try {
+			incoming = remoteToStory(remote);
+		} catch (error) {
+			console.warn(
+				`Couldn't parse twee for Notion story ${remote.storyId}, skipping`,
+				error
+			);
+			continue;
+		}
+
+		const index = result.findIndex(story => story.id === remote.storyId);
+
+		if (index === -1) {
+			result.push(incoming);
+			continue;
+		}
+
+		if (storyToTwee(incoming) === storyToTwee(result[index])) {
+			continue;
+		}
+
+		const timestamp = remoteTimestamp(remote);
+
+		if (timestamp && timestamp > result[index].lastUpdate) {
+			result[index] = incoming;
+		}
+	}
+
+	return result;
+}
+
+/**
+ * Loads stories from Notion and merges them with locally-loaded ones (see
+ * mergeRemoteStories). If sync is disabled or the request fails, local
+ * stories are returned untouched.
+ */
+export async function mergeStoriesFromNotion(
+	localStories: StoriesState
+): Promise<Story[]> {
 	if (!(await isEnabled())) {
-		return [];
+		return localStories;
 	}
 
 	try {
 		const response = await fetch('/__notion-sync/stories');
 
 		if (!response.ok) {
-			return [];
+			return localStories;
 		}
 
-		const remoteStories: {
-			lastSynced: string | null;
-			storyId: string;
-			twee: string;
-		}[] = await response.json();
-
-		return remoteStories.map(({lastSynced, storyId, twee}) => {
-			const story = storyFromTwee(twee);
-
-			// Keep the original story ID so future syncs update the same Notion
-			// page.
-
-			return {
-				...story,
-				id: storyId,
-				lastUpdate: lastSynced ? new Date(lastSynced) : story.lastUpdate,
-				passages: story.passages.map(passage => ({
-					...passage,
-					story: storyId
-				}))
-			};
-		});
+		return mergeRemoteStories(localStories, await response.json());
 	} catch (error) {
-		console.warn('Restoring stories from Notion failed', error);
-		return [];
+		console.warn('Merging stories from Notion failed', error);
+		return localStories;
 	}
 }

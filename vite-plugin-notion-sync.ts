@@ -87,6 +87,15 @@ function tweeToCodeBlocks(twee: string) {
 	return blocks;
 }
 
+function tweeFromBlocks(blocks: any[]) {
+	return blocks
+		.filter((block: any) => block.type === 'code')
+		.map((block: any) =>
+			block.code.rich_text.map((item: any) => item.plain_text).join('')
+		)
+		.join('');
+}
+
 async function findPageByStoryId(config: NotionSyncConfig, storyId: string) {
 	const result = await notionRequest(
 		config,
@@ -112,17 +121,25 @@ async function upsertStory(
 	const existingPage = await findPageByStoryId(config, storyId);
 
 	if (existingPage) {
-		await notionRequest(config, 'PATCH', `/pages/${existingPage.id}`, {
-			properties
-		});
-
-		// Replace the page contents wholesale with the new twee source.
-
 		const children = await notionRequest(
 			config,
 			'GET',
 			`/blocks/${existingPage.id}/children?page_size=100`
 		);
+
+		// Skip no-op pushes (e.g. store repairs dispatched on every app load).
+		// Everything meaningful lives in the twee source, and leaving the page
+		// untouched keeps its timestamps useful for merge-on-load comparisons.
+
+		if (tweeFromBlocks(children.results) === twee) {
+			return false;
+		}
+
+		await notionRequest(config, 'PATCH', `/pages/${existingPage.id}`, {
+			properties
+		});
+
+		// Replace the page contents wholesale with the new twee source.
 
 		for (const block of children.results) {
 			await notionRequest(config, 'DELETE', `/blocks/${block.id}`);
@@ -138,6 +155,8 @@ async function upsertStory(
 			children: tweeToCodeBlocks(twee)
 		});
 	}
+
+	return true;
 }
 
 async function archiveStory(config: NotionSyncConfig, storyId: string) {
@@ -171,12 +190,7 @@ async function listStories(config: NotionSyncConfig) {
 			'GET',
 			`/blocks/${page.id}/children?page_size=100`
 		);
-		const twee = children.results
-			.filter((block: any) => block.type === 'code')
-			.map((block: any) =>
-				block.code.rich_text.map((item: any) => item.plain_text).join('')
-			)
-			.join('');
+		const twee = tweeFromBlocks(children.results);
 
 		if (!twee) {
 			continue;
@@ -185,7 +199,10 @@ async function listStories(config: NotionSyncConfig) {
 		stories.push({
 			storyId,
 			twee,
-			lastSynced: page.properties['Last Synced']?.date?.start ?? null
+			lastSynced: page.properties['Last Synced']?.date?.start ?? null,
+			// Notion rounds this to the minute, so lastSynced (set on every push
+			// with full precision) is the better timestamp when both exist.
+			lastEdited: page.last_edited_time ?? null
 		});
 	}
 
@@ -270,10 +287,14 @@ export function notionSync(): Plugin {
 
 						if (req.method === 'PUT') {
 							const payload = await readJsonBody(req);
+							const wrote = await enqueueWrite(() =>
+								upsertStory(config, storyId, payload)
+							);
 
-							await enqueueWrite(() => upsertStory(config, storyId, payload));
 							server.config.logger.info(
-								`[notion-sync] Synced story "${payload.name}" (${storyId})`
+								`[notion-sync] ${
+									wrote ? 'Synced' : 'Already up to date:'
+								} story "${payload.name}" (${storyId})`
 							);
 							return respond(200, {ok: true});
 						}
