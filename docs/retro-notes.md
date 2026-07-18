@@ -69,8 +69,27 @@ Notion에 쓴 주간 회고를 Twine(twinejs)의 **twee 인터랙티브 픽션**
 ### 진행 상태
 - **Phase 1 완료**: 재생 sandbox iframe 격리(`SandboxedStoryPlayer`, play/proof/test 라우트),
   `vercel.json`, `vite build` 검증.
-- **Phase 2(예정)**: Notion OAuth + `/api` 프록시(쿠키 세션), 클라 sync 경로 `/api/notion-sync/`로 전환.
-- **Phase 3(예정)**: `/api/translate` + 회고 위저드 UI(주차→Q&A→Play/보완).
+- **Phase 2 완료(코드)**: `api/` 서버리스 — 세션 쿠키(`api/_lib/session.ts`, AES-GCM),
+  Notion 헬퍼(`api/_lib/notion.ts`), OAuth(`api/notion/{login,callback,logout}.ts`),
+  `api/session.ts`, sync 프록시(`api/notion-sync/{status,stories}`). 클라는 안 고치고
+  `vercel.json` rewrite로 기존 `/__notion-sync/*`를 함수로 보냄. api/ 타입체크 0 에러.
+  **런타임 검증은 배포 후**(OAuth 왕복은 로컬 불가).
+- **Phase 3(예정)**: `/api/notion/{weeks,draft}` + `/api/translate` + 회고 위저드 UI
+  (Notion 연결 → 회고 루트 선택 → stories DB 확보해 세션에 `dbId` 기록 → 주차→Q&A→Play/보완).
+  ※ sync는 세션에 `dbId`가 있어야 활성 → 위저드가 그걸 채운다.
+
+## Vercel 배포 방법 (준비)
+1. **Notion public OAuth 통합 등록** (https://www.notion.so/my-integrations → 새 통합 → Public):
+   - Redirect URI = `https://<앱>.vercel.app/api/notion/callback`
+   - `client_id`, `client_secret` 확보.
+2. **Vercel 프로젝트** 연결(이 저장소). 빌드는 `vercel.json`이 `vite build`→`dist/web`로 처리.
+3. **Vercel 환경변수** 설정:
+   - `NOTION_OAUTH_CLIENT_ID`, `NOTION_OAUTH_CLIENT_SECRET`
+   - `NOTION_REDIRECT_URI` = 위 콜백 URL
+   - `COOKIE_SECRET` = 임의의 긴 랜덤 문자열(세션 암호화 키)
+   - (Anthropic 키는 **여기 넣지 않음** — 각 사용자가 자기 Notion 설정 페이지에 적어두면 서버가 읽음)
+4. 배포 후 검증: `/api/session`이 `{connected:false}` → "Notion 연결" → 콜백 후 `{connected:true}`,
+   재생 iframe 안에서 `parent.document.cookie` 접근이 막히는지 확인.
 
 ### 남은 결정/선행조건
 - Phase 2·3은 **배포해야 검증 가능**(로컬에서 OAuth 왕복 불가).

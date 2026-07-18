@@ -2,5 +2,13 @@
 	"$schema": "https://openapi.vercel.sh/vercel.json",
 	"buildCommand": "vite build",
 	"outputDirectory": "dist/web",
-	"framework": null
+	"framework": null,
+	"rewrites": [
+		{"source": "/__notion-sync/status", "destination": "/api/notion-sync/status"},
+		{
+			"source": "/__notion-sync/stories/:id",
+			"destination": "/api/notion-sync/stories/:id"
+		},
+		{"source": "/__notion-sync/stories", "destination": "/api/notion-sync/stories"}
+	]
 }

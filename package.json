@@ -85,6 +85,7 @@
 		"@types/semver": "^7.3.4",
 		"@types/ua-parser-js": "^0.7.36",
 		"@typescript-eslint/parser": "^7.14.1",
+		"@vercel/node": "^5.8.26",
 		"@vitejs/plugin-react": "^4.3.1",
 		"@vitejs/plugin-react-swc": "^3.7.0",
 		"browserslist-to-esbuild": "^1.2.0",
