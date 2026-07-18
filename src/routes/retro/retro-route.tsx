@@ -225,6 +225,9 @@ export const RetroRoute: React.FC = () => {
 								</li>
 							)}
 						</ul>
+						<a className="retro-back" href="/api/notion/login">
+							원하는 페이지가 없나요? → Notion 다시 연결(페이지 다시 공유)
+						</a>
 					</>
 				)}
 
