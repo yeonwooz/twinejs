@@ -6,6 +6,7 @@ import {StoryListRoute} from './story-list';
 import {StoryPlayRoute} from './story-play';
 import {StoryProofRoute} from './story-proof';
 import {StoryTestRoute} from './story-test';
+import {RetroRoute} from './retro';
 import {WelcomeRoute} from './welcome';
 
 export const Routes: React.FC = () => {
@@ -25,6 +26,9 @@ export const Routes: React.FC = () => {
 					</Route>
 					<Route path="/welcome">
 						<WelcomeRoute />
+					</Route>
+					<Route path="/retro">
+						<RetroRoute />
 					</Route>
 					<Route path="/stories/:storyId/play">
 						<StoryPlayRoute />

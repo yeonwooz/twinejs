@@ -221,3 +221,41 @@ export async function archiveStory(token: string, dbId: string, storyId: string)
 		await notion(token, 'PATCH', `/pages/${existing.id}`, {archived: true});
 	}
 }
+
+// --- 위저드용: 페이지 검색 / 주차 목록 ---
+
+function titleOf(page: any): string {
+	const props = page?.properties ?? {};
+	for (const k of Object.keys(props)) {
+		const p = props[k];
+		if (p?.type === 'title' && Array.isArray(p.title)) {
+			return p.title.map((t: any) => t.plain_text ?? '').join('');
+		}
+	}
+	return page?.child_page?.title ?? '';
+}
+
+// OAuth 동의 때 공유된 페이지들(회고 루트 후보).
+export async function searchPages(token: string) {
+	const res = await notion(token, 'POST', '/search', {
+		filter: {property: 'object', value: 'page'},
+		page_size: 100
+	});
+	return res.results
+		.filter((p: any) => p.id && !p.archived)
+		.map((p: any) => ({id: p.id, title: titleOf(p) || '(제목 없음)'}));
+}
+
+export function weekNumOf(title: string): number {
+	const m = (title || '').match(/(\d+)\s*주차/);
+	return m ? Number(m[1]) : -1;
+}
+
+// 루트 아래 "N주차 회고" 페이지들 (주차 숫자 내림차순).
+export async function weekPages(token: string, rootId: string) {
+	const pages = await listChildPages(token, rootId);
+	return pages
+		.filter((p: {title: string}) => /주차/.test(p.title))
+		.map((p: {id: string; title: string}) => ({...p, week: weekNumOf(p.title)}))
+		.sort((a: {week: number}, b: {week: number}) => b.week - a.week);
+}

@@ -3,6 +3,9 @@
 	"buildCommand": "vite build",
 	"outputDirectory": "dist/web",
 	"framework": null,
+	"functions": {
+		"api/translate.ts": {"includeFiles": "scripts/**"}
+	},
 	"rewrites": [
 		{"source": "/__notion-sync/status", "destination": "/api/notion-sync/status"},
 		{
