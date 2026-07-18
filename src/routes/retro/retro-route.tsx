@@ -63,6 +63,9 @@ export const RetroRoute: React.FC = () => {
 	const [twee, setTwee] = React.useState<string>();
 	const [storyName, setStoryName] = React.useState<string>();
 	const [feedback, setFeedback] = React.useState('');
+	const [message, setMessage] = React.useState('');
+	const [msgSaved, setMsgSaved] = React.useState(false);
+	const [msgError, setMsgError] = React.useState<string>();
 
 	const fail = React.useCallback((e: unknown) => {
 		setError(e instanceof Error ? e.message : String(e));
@@ -189,6 +192,20 @@ export const RetroRoute: React.FC = () => {
 		runTranslate(week, draft, qa, twee, fb || undefined);
 	}
 
+	async function saveMessage() {
+		if (!week || !message.trim()) return;
+		setMsgError(undefined);
+		try {
+			await postJson('/api/notion/message', {
+				pageId: week.id,
+				message: message.trim()
+			});
+			setMsgSaved(true);
+		} catch (e) {
+			setMsgError(e instanceof Error ? e.message : String(e));
+		}
+	}
+
 	const denied = new URLSearchParams(location.search).get('notion') === 'denied';
 
 	return (
@@ -299,6 +316,32 @@ export const RetroRoute: React.FC = () => {
 							>
 								편집기에서 열기
 							</button>
+							<button className="retro-btn" onClick={() => history.push('/')}>
+								목록으로
+							</button>
+						</div>
+
+						<div className="retro-message">
+							<label>그때의 나에게 한마디 (저장하면 Notion 그 주차 페이지에 남아요)</label>
+							<textarea
+								rows={3}
+								value={message}
+								onChange={e => setMessage(e.target.value)}
+								disabled={msgSaved}
+								placeholder="다음 배포 직전의 나에게…"
+							/>
+							{msgSaved ? (
+								<p className="retro-muted">✓ Notion에 저장됐어요.</p>
+							) : (
+								<button
+									className="retro-btn"
+									onClick={saveMessage}
+									disabled={!message.trim()}
+								>
+									Notion에 저장
+								</button>
+							)}
+							{msgError && <p className="retro-error">{msgError}</p>}
 						</div>
 						<div className="retro-refine">
 							<label>보완하고 싶은 점이 있으면 적어주세요</label>

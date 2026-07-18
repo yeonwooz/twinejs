@@ -1,4 +1,5 @@
 import * as React from 'react';
+import {useHistory} from 'react-router-dom';
 import {ErrorMessage} from '../error';
 import './sandboxed-story-player.css';
 
@@ -19,6 +20,7 @@ export interface SandboxedStoryPlayerProps {
 export const SandboxedStoryPlayer: React.FC<SandboxedStoryPlayerProps> = ({
 	publish
 }) => {
+	const history = useHistory();
 	const [html, setHtml] = React.useState<string>();
 	const [error, setError] = React.useState<Error>();
 	const [inited, setInited] = React.useState(false);
@@ -43,11 +45,19 @@ export const SandboxedStoryPlayer: React.FC<SandboxedStoryPlayerProps> = ({
 	}
 
 	return (
-		<iframe
-			className="sandboxed-story-player"
-			title="Story"
-			sandbox="allow-scripts"
-			srcDoc={html}
-		/>
+		<>
+			<button
+				className="sandboxed-story-back"
+				onClick={() => history.push('/')}
+			>
+				← 목록으로
+			</button>
+			<iframe
+				className="sandboxed-story-player"
+				title="Story"
+				sandbox="allow-scripts"
+				srcDoc={html}
+			/>
+		</>
 	);
 };

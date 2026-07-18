@@ -259,3 +259,29 @@ export async function weekPages(token: string, rootId: string) {
 		.map((p: {id: string; title: string}) => ({...p, week: weekNumOf(p.title)}))
 		.sort((a: {week: number}, b: {week: number}) => b.week - a.week);
 }
+
+// "그때의 나에게" 메시지를 주차 페이지 본문 끝에 callout으로 덧붙인다(기존 내용 보존).
+export async function appendMessage(
+	token: string,
+	pageId: string,
+	message: string
+) {
+	const stamp = new Date().toISOString().slice(0, 10);
+	await notion(token, 'PATCH', `/blocks/${pageId}/children`, {
+		children: [
+			{
+				object: 'block',
+				type: 'callout',
+				callout: {
+					icon: {type: 'emoji', emoji: '🌌'},
+					rich_text: [
+						{
+							type: 'text',
+							text: {content: `[${stamp}] 다른 우주의 내가 보낸 메시지 — ${message}`}
+						}
+					]
+				}
+			}
+		]
+	});
+}

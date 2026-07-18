@@ -7,3 +7,21 @@
 	margin: 0;
 	background: #fff;
 }
+
+.sandboxed-story-back {
+	position: fixed;
+	top: 0.8rem;
+	left: 0.8rem;
+	z-index: 10;
+	padding: 0.4em 0.8em;
+	border: 1px solid rgba(143, 208, 255, 0.5);
+	border-radius: 8px;
+	background: rgba(10, 14, 30, 0.75);
+	color: #eaf0ff;
+	font: inherit;
+	cursor: pointer;
+	backdrop-filter: blur(4px);
+}
+.sandboxed-story-back:hover {
+	border-color: #8fd0ff;
+}
