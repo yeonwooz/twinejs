@@ -52,7 +52,11 @@ export default defineConfig({
 			registerType: 'autoUpdate',
 			includeAssets: ['locales/**', 'pwa/**', 'story-formats/**'],
 			workbox: {
-				globPatterns: ['**/*.{js,css,html,svg,woff,woff2}']
+				globPatterns: ['**/*.{js,css,html,svg,woff,woff2}'],
+				// /api/* (OAuth 리다이렉트·서버리스)는 SW가 SPA 껍데기로 가로채지 않고
+				// 네트워크(서버리스 함수)로 그대로 보낸다. 안 그러면 /api/notion/login이
+				// index.html을 받아 흰 화면이 된다.
+				navigateFallbackDenylist: [/^\/api\//]
 			}
 		})
 	],
