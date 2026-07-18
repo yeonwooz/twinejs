@@ -37,14 +37,18 @@ Notion의 회고 초안을 twee 인터랙티브 회고로 번역해 **stories DB
 ```
 루트 페이지
 └─ "N주차 회고"  (child_page, 여러 개면 주차 숫자 최대 = 최신)
-   ├─ "회고 초안"        (child_page) ← 소스
-   └─ "인터랙티브 회고"  (child_page) ← 결과물 (twee를 code 블록으로 저장)
+      → 페이지 본문에 회고 내용을 직접 작성. (별도 "회고 초안" 하위 페이지는 필요 없음.
+        예전처럼 "회고 초안" 하위 페이지가 있으면 그걸 우선 사용)
 ```
 
-개별 주차/초안/인터랙티브 페이지 ID는 하드코딩하지 않고 루트에서 런타임에 탐색한다.
+- **소스**: "N주차 회고" 페이지 본문(하위 페이지로는 파고들지 않음).
+- **결과물(twee)**: stories DB(`NOTION_STORIES_DB_ID`)에 저장 → 앱이 pull. (Notion에 "인터랙티브 회고" 페이지를 따로 두지 않는다.)
+
+주차 페이지 ID는 하드코딩하지 않고 루트에서 런타임에 탐색한다.
 접근은 `NOTION_TOKEN` + 헤더 `Notion-Version: 2022-06-28`.
-twee는 sync 규약대로 **code 블록(language `plain text`)** 으로 저장하고, 갱신 시
-"기존 자식 블록 DELETE → 새 code 블록 PATCH" 패턴을 쓴다.
+stories DB의 twee는 **code 블록(language `plain text`)** 으로 저장하고, 갱신 시
+"기존 자식 블록 DELETE → 새 code 블록 PATCH" 패턴을 쓴다. 원본 회고 본문을 갱신할 땐
+하위 페이지/DB는 보존하고 텍스트 블록만 교체한다.
 
 ### 번역 규칙 / 컨셉 (단일 소스)
 

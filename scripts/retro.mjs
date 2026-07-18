@@ -88,6 +88,8 @@ async function readBlockText(blockId, depth = 0) {
 	);
 	let text = '';
 	for (const b of results) {
+		// 하위 페이지/DB는 본문이 아니므로 건너뛴다(파고들지 않음).
+		if (b.type === 'child_page' || b.type === 'child_database') continue;
 		const d = b[b.type];
 		if (d && typeof d === 'object' && Array.isArray(d.rich_text)) {
 			const line = d.rich_text.map(r => r.plain_text ?? '').join('');
@@ -143,6 +145,16 @@ function tweeCodeBlocks(twee) {
 async function replaceChildren(pageId, blocks) {
 	const {results} = await notion('GET', `/blocks/${pageId}/children?page_size=100`);
 	for (const b of results) await notion('DELETE', `/blocks/${b.id}`);
+	await notion('PATCH', `/blocks/${pageId}/children`, {children: blocks});
+}
+
+// 페이지 본문(텍스트) 블록만 교체하고 하위 페이지/DB는 보존한다.
+async function replaceTextChildren(pageId, blocks) {
+	const {results} = await notion('GET', `/blocks/${pageId}/children?page_size=100`);
+	for (const b of results) {
+		if (b.type === 'child_page' || b.type === 'child_database') continue;
+		await notion('DELETE', `/blocks/${b.id}`);
+	}
 	await notion('PATCH', `/blocks/${pageId}/children`, {children: blocks});
 }
 
@@ -409,17 +421,22 @@ async function main() {
 		}
 		console.log(`[retro] 작업 주차: ${week.title}`);
 
-		// 2. 그 주차의 "회고 초안"이 있는지 찾는다.
+		// 2. 초안 소스 = "N주차 회고" 페이지 본문.
+		//    (별도 "회고 초안" 하위 페이지는 필수 아님 — 있으면 그걸 우선 사용)
 		const pages = await listChildPages(week.id);
 		const draftPage = pages.find(p => /초안/.test(p.title));
-		if (!draftPage) {
+		const draftSourceId = draftPage ? draftPage.id : week.id;
+		const draftText = (await readBlockText(draftSourceId)).trim();
+		if (!draftText) {
 			throw new Error(
-				`"${week.title}" 아래에 "회고 초안" 페이지가 없습니다. 노션에서 먼저 초안을 작성해 주세요.`
+				`"${week.title}" 페이지에 회고 내용이 없습니다. 그 페이지 본문에 회고를 작성해 주세요.`
 			);
 		}
-		const draftText = (await readBlockText(draftPage.id)).trim();
-		if (!draftText) throw new Error(`"${week.title}"의 회고 초안이 비어 있습니다.`);
-		console.log(`[retro] "${draftPage.title}" 읽음 (${draftText.length}자).`);
+		console.log(
+			`[retro] ${
+				draftPage ? `"${draftPage.title}"` : `"${week.title}" 본문`
+			} 읽음 (${draftText.length}자).`
+		);
 
 		const weekN = weekNum(week.title);
 
@@ -474,7 +491,7 @@ async function main() {
 			console.warn(`[retro] 경고: twee에 문제가 남아 있습니다: ${problems.join('; ')}`);
 		}
 
-		// 5. 원본 초안 업데이트(규칙 1) + stories DB upsert.
+		// 5. 원본 회고(주차 페이지 본문) 업데이트(규칙 1) + stories DB upsert.
 		if (result.draftUpdate && result.draftUpdate.trim() !== draftText) {
 			const paras = result.draftUpdate
 				.split(/\n{2,}/)
@@ -485,8 +502,13 @@ async function main() {
 					type: 'paragraph',
 					paragraph: {rich_text: [{type: 'text', text: {content: p}}]}
 				}));
-			await replaceChildren(draftPage.id, paras);
-			console.log('[retro] 원본 "회고 초안"을 완성본으로 업데이트했습니다.');
+			// 본문 텍스트만 교체하고 하위 페이지/DB는 보존.
+			await replaceTextChildren(draftSourceId, paras);
+			console.log(
+				`[retro] 원본 회고(${
+					draftPage ? draftPage.title : week.title
+				})를 완성본으로 업데이트했습니다.`
+			);
 		}
 
 		let title = tweeTitle(result.twee);
