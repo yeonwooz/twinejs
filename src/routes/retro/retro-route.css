@@ -106,3 +106,22 @@
 	padding-top: 1rem;
 	border-top: 1px solid rgba(143, 208, 255, 0.2);
 }
+
+.retro-back {
+	margin-top: 1rem;
+	background: none;
+	border: none;
+	color: #8fb0dd;
+	font: inherit;
+	cursor: pointer;
+	padding: 0.3em 0;
+	text-decoration: underline;
+}
+.retro-back:hover {
+	color: #cfe0ff;
+}
+.retro-back-row {
+	display: flex;
+	gap: 1.2rem;
+	margin-top: 0.5rem;
+}

@@ -243,6 +243,9 @@ export const RetroRoute: React.FC = () => {
 								</li>
 							)}
 						</ul>
+						<button className="retro-back" onClick={loadRoots}>
+							← 다른 Notion 페이지(루트) 다시 선택
+						</button>
 					</>
 				)}
 
@@ -304,6 +307,14 @@ export const RetroRoute: React.FC = () => {
 							/>
 							<button className="retro-btn" onClick={refine}>
 								보완해서 다시 만들기
+							</button>
+						</div>
+						<div className="retro-back-row">
+							<button className="retro-back" onClick={loadWeeks}>
+								← 다른 주차
+							</button>
+							<button className="retro-back" onClick={loadRoots}>
+								← 다른 Notion 페이지
 							</button>
 						</div>
 					</>
