@@ -2,17 +2,30 @@
 
 Twine(인터랙티브 픽션 저작 도구) 저장소. dev 서버에 Notion sync가 붙어 있어
 스토리가 twee 소스로 Notion stories DB에 미러링된다(`vite-plugin-notion-sync.ts`,
-`src/store/persistence/notion-sync/`).
+`src/store/persistence/notion-sync/`). 로컬 앱은 로드 시 stories DB만 pull 한다.
 
-설정·비밀은 전부 `.env.local`(gitignore됨)에 둔다. 이 파일이나 스킬 문서에는
+## 실행 진입점
+
+- `npm run dev` — vite 개발 서버만 (기존 `npm start`).
+- `npm start` — 회고 온보딩 플로우(`scripts/retro.mjs`): env 검증 → stories DB 없으면
+  자동 생성 → 노션 초안을 읽어 **Anthropic API(`@anthropic-ai/sdk`, `claude-opus-4-8`)로
+  twee 번역** → stories DB에 upsert → Play 선택 시 dev 서버 띄워 재생. (Claude Code 설치 불필요.)
+
+## 설정 / 비밀
+
+전부 `.env.local`(gitignore됨)에 둔다. 이 파일이나 스킬 문서에는
 토큰·페이지 ID·노션 URL 같은 워크스페이스 식별 정보를 **하드코딩하지 않는다.**
-- `NOTION_TOKEN` — 통합 토큰
-- `NOTION_STORIES_DB_ID` — 스토리 미러링 DB
-- `NOTION_RETRO_ROOT_PAGE_ID` — 회고 루트 페이지 ID
+`.env.example` 참고 — fork 사용자는 아래 셋만 채우면 된다:
+- `NOTION_TOKEN` — 통합 토큰(비밀)
+- `NOTION_RETRO_ROOT_PAGE_ID` — 회고 루트 페이지 링크/ID
+- `ANTHROPIC_API_KEY` — Anthropic API 키(비밀)
+
+그리고 자동 생성·기록되는 것:
+- `NOTION_STORIES_DB_ID` — 첫 `npm start` 때 루트 페이지 아래에 만들어 `.env.local`에 기록.
 
 ## 회고 → 인터랙티브 회고 번역
 
-Notion의 회고 초안을 twee 인터랙티브 회고로 번역하는 작업.
+Notion의 회고 초안을 twee 인터랙티브 회고로 번역해 **stories DB에 올려 앱에서 재생**하는 작업.
 **전체 절차는 `retro-to-twee` 스킬(`.claude/skills/retro-to-twee/SKILL.md`)로 실행한다** —
 "회고 번역해줘" / "인터랙티브 회고 만들어" 라고 하면 그 스킬을 쓰면 된다.
 (스킬 파일을 만든 세션에서는 아직 목록에 안 떠서 SKILL.md 절차를 직접 따라야 할 수 있음.)
@@ -33,11 +46,13 @@ Notion의 회고 초안을 twee 인터랙티브 회고로 번역하는 작업.
 twee는 sync 규약대로 **code 블록(language `plain text`)** 으로 저장하고, 갱신 시
 "기존 자식 블록 DELETE → 새 code 블록 PATCH" 패턴을 쓴다.
 
-### 번역 규칙
+### 번역 규칙 / 컨셉 (단일 소스)
 
-- 만약 회고에 비어있는 조건이 있으면 물어봐서 채워넣고, 원본(노션 회고 초안)도 업데이트할 것
-- 어디서 구절을 끊을지 — 한 구절이 너무 길지 않게, 선택 직전에서 자르도록
-- 선택지 인식 — 자연어 속 갈림길("A하면 이쪽, B하면 저쪽")을 `[[선택지->구절제목]]` 링크로 바꾸기
-- 구절 제목 일관성 — 링크와 목적지 제목이 정확히 일치해야 함(띄어쓰기 하나만 틀려도 링크가 깨짐)
-- 특수기호 충돌 — 본문에 `[[`나 `->`가 들어가면 twee 문법과 부딪히지 않게 이스케이프
-- 재번역 시 링크 유지 — 제목이 바뀌면 기존 링크가 깨지므로 제목을 고정
+번역 규칙·평행우주 컨셉·twee 형식은 **`scripts/retro-prompt.md`가 단일 소스**다.
+`npm start`(retro.mjs)가 이 파일을 그대로 시스템 프롬프트로 읽고, 수동 작업도 이걸 따른다.
+규칙을 바꾸려면 그 파일만 고친다 — 여기와 SKILL에는 옮겨 적지 않는다.
+
+요지: 회고를 "평행우주 여행" 서사로 만든다. 후회 없는 결정은 분기 없이 통과(단일 우주),
+후회 지점마다 평행우주(분기) 생성 → 허브에서 모두 탐색 → 가장 마음에 드는 우주 선택 →
+"현실의 나에게 메시지"를 `(input-box:)`로 직접 작성. 우주 테마 CSS는 retro.mjs가 자동으로 입힌다.
+비어있는 조건이 있으면 물어보고 원본 초안도 채워 넣는다.

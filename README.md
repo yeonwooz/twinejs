@@ -34,8 +34,15 @@ your operating system's package manager.
 
 ### BUILDING
 
-Run `npm start` to begin serving a development version of Twine locally. This
+Run `npm run dev` to begin serving a development version of Twine locally. This
 server will automatically update with changes you make.
+
+Run `npm start` for the Notion retrospective onboarding flow (see
+`scripts/retro.mjs` and `.env.example`): it reads a Notion retrospective draft,
+translates it into a playable Twine story via the Anthropic API, uploads it to
+the stories database, and then starts the dev server to play it. Copy
+`.env.example` to `.env.local` and fill in `NOTION_TOKEN`,
+`NOTION_RETRO_ROOT_PAGE_ID`, and `ANTHROPIC_API_KEY` first.
 
 Run `npm run start:electron` to run a development version of the Electron app.
 **Running this can damage files in your Twine storied folder. Take a backup copy
