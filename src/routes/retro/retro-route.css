@@ -2,7 +2,6 @@
 	position: fixed;
 	inset: 0;
 	display: flex;
-	align-items: center;
 	justify-content: center;
 	padding: 1.5rem;
 	background: radial-gradient(ellipse at 50% 120%, #1b2a4a 0%, #0a0d1a 55%, #05060a 100%);
@@ -11,6 +10,8 @@
 }
 
 .retro-card {
+	/* margin:auto → 짧으면 가운데 정렬, 길면 위/아래로 스크롤 가능(잘림 방지). */
+	margin: auto;
 	width: 100%;
 	max-width: 34rem;
 	background: rgba(18, 26, 54, 0.55);
