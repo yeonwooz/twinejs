@@ -10,7 +10,7 @@
 		"url": "https://github.com/klembot/twinejs"
 	},
 	"engines": {
-		"node": ">=20",
+		"node": "22.x",
 		"npm": ">=10"
 	},
 	"dependencies": {
