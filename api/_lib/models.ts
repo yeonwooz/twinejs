@@ -1,5 +1,7 @@
 // LLM 프로바이더/모델 카탈로그 (서버 단일 소스). translate.ts와 llm-info.ts가
 // 같은 목록을 쓰도록 여기 모아둔다. 비용은 사용자가 모델을 고를 때 참고용 힌트로만.
+import Anthropic from '@anthropic-ai/sdk';
+
 export type Provider = 'anthropic' | 'openai';
 
 export interface ModelOption {
@@ -35,8 +37,33 @@ export function providerFromKey(apiKey: string): Provider {
 }
 
 // 요청받은 모델이 그 프로바이더 목록에 없으면 기본값으로 되돌린다
-// (예: Anthropic 키인데 OpenAI 모델을 골랐을 때 방어).
+// (예: Anthropic 키인데 OpenAI 모델을 골랐을 때 방어). 단, Anthropic Opus는
+// 카탈로그에 없는 최신 버전(런타임 발견분)도 허용한다.
 export function resolveModel(provider: Provider, model?: string): string {
-	if (model && MODELS[provider].some(m => m.id === model)) return model;
+	if (
+		model &&
+		(MODELS[provider].some(m => m.id === model) ||
+			(provider === 'anthropic' && /^claude-opus-/.test(model)))
+	) {
+		return model;
+	}
 	return DEFAULT_MODEL[provider];
+}
+
+// 계정에서 접근 가능한 가장 최근 Opus 모델 ID를 Models API로 찾는다. "opus-latest"
+// 같은 고정 별칭이 없어서, 기본값을 특정 버전에 못박지 않고 최신을 추종하려는 목적.
+// 실패하면 null → 호출부가 DEFAULT_MODEL로 폴백.
+export async function latestOpusId(apiKey: string): Promise<string | null> {
+	try {
+		const anthropic = new Anthropic({apiKey});
+		const list = await anthropic.models.list({limit: 100});
+		const opus = list.data
+			.filter(m => m.id.startsWith('claude-opus-'))
+			.sort((a, b) =>
+				String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''))
+			);
+		return opus[0]?.id ?? null;
+	} catch {
+		return null;
+	}
 }

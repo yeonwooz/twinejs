@@ -6,14 +6,16 @@ import {readFileSync} from 'node:fs';
 import path from 'node:path';
 import {Provider} from './models';
 
-// adaptive thinking을 지원하는 Anthropic 모델. 그 외(예: Haiku 4.5)는 thinking 파라미터를
-// 생략한다(보내면 400).
-const ADAPTIVE_THINKING = new Set([
-	'claude-opus-4-8',
-	'claude-opus-4-7',
-	'claude-sonnet-5',
-	'claude-fable-5'
-]);
+// adaptive thinking + effort를 지원하는 Anthropic 모델 판별. 모든 Opus(4.7+, 우리
+// 드롭다운/기본값엔 그 이상만 노출)와 Sonnet 5·Fable 5가 해당. Haiku 4.5 등은 미지원이라
+// thinking/effort를 생략한다(보내면 400). 최신 Opus를 런타임에 발견해도 커버되도록 접두사 사용.
+function supportsAdaptive(model: string): boolean {
+	return (
+		model.startsWith('claude-opus-') ||
+		model === 'claude-sonnet-5' ||
+		model === 'claude-fable-5'
+	);
+}
 
 function readScript(name: string): string {
 	return readFileSync(path.join(process.cwd(), 'scripts', name), 'utf8');
@@ -134,7 +136,7 @@ async function translateAnthropic(
 		system,
 		messages: [{role: 'user', content: user}]
 	};
-	if (ADAPTIVE_THINKING.has(input.model)) {
+	if (supportsAdaptive(input.model)) {
 		req.thinking = {type: 'adaptive'};
 		// effort 기본값은 high(사고 토큰 최대 = 최고 비용). 회고→twee는 형식이 정해진
 		// 작업이라 medium이면 충분 — 사고량을 낮춰 비용을 아낀다. (effort는 adaptive

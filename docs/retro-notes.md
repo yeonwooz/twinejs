@@ -122,8 +122,11 @@ Notion에 쓴 주간 회고를 Twine(twinejs)의 **twee 인터랙티브 픽션**
 
 ### 비용 절감
 - **effort=medium** (Anthropic adaptive 지원 모델). 기존엔 effort 미설정 → 기본 high(사고 토큰 최대).
-  회고→twee는 형식 고정 작업이라 medium으로 충분. 기본 모델은 Opus 4.8 유지(창작 품질 우선,
+  회고→twee는 형식 고정 작업이라 medium으로 충분. 기본 모델은 **최신 Opus 추종**(창작 품질 우선,
   BYO-key라 비용은 사용자 몫 + 드롭다운으로 다운그레이드 가능).
+- **기본 모델 = 최신 Opus (런타임 발견)**: Anthropic엔 `opus-latest` 고정 별칭이 없어, `latestOpusId`가
+  Models API로 계정의 가장 최근 Opus를 찾아 기본값으로 씀(실패 시 `DEFAULT_MODEL`=opus-4-8 폴백).
+  4.9/5가 나와도 코드 수정 없이 자동 추종. `supportsAdaptive`/`resolveModel`은 opus 접두사로 신버전 커버.
 - **자동보정 재시도 축소**: `StoryData.start` 누락/오류는 `repairStartPassage`로 **코드에서 첫
   서사 구절로 지정** → LLM 재호출 절약. 끊긴 링크 등 코드로 못 고치는 문제일 때만 1회 LLM 재보정.
 - (프롬프트 캐싱은 시스템 프롬프트가 ~650토큰뿐, 최소 캐시 기준 4096 미달 → 효과 없어 미적용.)
