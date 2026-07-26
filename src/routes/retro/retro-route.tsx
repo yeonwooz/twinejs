@@ -583,7 +583,7 @@ export const RetroRoute: React.FC = () => {
 								value={message}
 								onChange={e => setMessage(e.target.value)}
 								disabled={msgSaved}
-								placeholder="다음 배포 직전의 나에게…"
+								placeholder="예: 그때의 너에게 — 그 선택, 후회하지 않아도 돼…"
 							/>
 							{msgSaved ? (
 								<p className="retro-muted">✓ Notion에 저장됐어요.</p>
