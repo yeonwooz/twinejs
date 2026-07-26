@@ -1,6 +1,5 @@
 import * as React from 'react';
 import {HashRouter, Route, Switch} from 'react-router-dom';
-import {usePrefsContext} from '../store/prefs';
 import {StoryEditRoute} from './story-edit';
 import {StoryListRoute} from './story-list';
 import {StoryPlayRoute} from './story-play';
@@ -10,54 +9,51 @@ import {RetroRoute} from './retro';
 import {WelcomeRoute} from './welcome';
 
 export const Routes: React.FC = () => {
-	const {prefs} = usePrefsContext();
-
 	// A <HashRouter> is used to make our lives easier--to load local story
 	// formats, we need the document HREF to reflect where the HTML file is.
 	// Otherwise we'd have to store the actual location somewhere, which will
 	// differ between web and Electron contexts.
 
+	// 첫 로딩에 웰컴 투어를 강제하지 않고 바로 홈(스토리 목록)으로 보낸다.
+	// 웰컴은 /welcome 경로로 여전히 접근 가능.
+
 	return (
 		<HashRouter>
-			{prefs.welcomeSeen ? (
-				<Switch>
-					<Route exact path="/">
-						<StoryListRoute />
-					</Route>
-					<Route path="/welcome">
-						<WelcomeRoute />
-					</Route>
-					<Route path="/retro">
-						<RetroRoute />
-					</Route>
-					<Route path="/stories/:storyId/play">
-						<StoryPlayRoute />
-					</Route>
-					<Route path="/stories/:storyId/proof">
-						<StoryProofRoute />
-					</Route>
-					<Route path="/stories/:storyId/test/:passageId">
-						<StoryTestRoute />
-					</Route>
-					<Route path="/stories/:storyId/test">
-						<StoryTestRoute />
-					</Route>
-					<Route path="/stories/:storyId">
-						<StoryEditRoute />
-					</Route>
-					<Route
-						path="*"
-						render={path => {
-							console.warn(
-								`No route for path "${path.location.pathname}", rendering story list`
-							);
-							return <StoryListRoute />;
-						}}
-					></Route>
-				</Switch>
-			) : (
-				<WelcomeRoute />
-			)}
+			<Switch>
+				<Route exact path="/">
+					<StoryListRoute />
+				</Route>
+				<Route path="/welcome">
+					<WelcomeRoute />
+				</Route>
+				<Route path="/retro">
+					<RetroRoute />
+				</Route>
+				<Route path="/stories/:storyId/play">
+					<StoryPlayRoute />
+				</Route>
+				<Route path="/stories/:storyId/proof">
+					<StoryProofRoute />
+				</Route>
+				<Route path="/stories/:storyId/test/:passageId">
+					<StoryTestRoute />
+				</Route>
+				<Route path="/stories/:storyId/test">
+					<StoryTestRoute />
+				</Route>
+				<Route path="/stories/:storyId">
+					<StoryEditRoute />
+				</Route>
+				<Route
+					path="*"
+					render={path => {
+						console.warn(
+							`No route for path "${path.location.pathname}", rendering story list`
+						);
+						return <StoryListRoute />;
+					}}
+				></Route>
+			</Switch>
 		</HashRouter>
 	);
 };

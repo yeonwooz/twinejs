@@ -89,7 +89,7 @@ export const RetroRoute: React.FC = () => {
 	const loadRoots = React.useCallback(async () => {
 		setStep('loading');
 		try {
-			const {pages} = await api('/api/notion/roots');
+			const {pages} = await api('/api/notion/root');
 			setPages(pages);
 			setStep('root');
 		} catch (e) {
@@ -133,7 +133,7 @@ export const RetroRoute: React.FC = () => {
 	const afterConfig = React.useCallback(async () => {
 		setStep('loading');
 		try {
-			const info = await api('/api/notion/llm-info');
+			const info = await api('/api/llm');
 			applyLlmInfo(info);
 			if (!info.provider) {
 				setStep('apikey');
@@ -159,7 +159,7 @@ export const RetroRoute: React.FC = () => {
 	async function chooseRoot(pageId: string) {
 		setStep('loading');
 		try {
-			await postJson('/api/notion/select-root', {pageId});
+			await postJson('/api/notion/root', {pageId});
 			await afterConfig();
 		} catch (e) {
 			fail(e);
@@ -176,7 +176,7 @@ export const RetroRoute: React.FC = () => {
 		}
 		setStep('loading');
 		try {
-			const info = await postJson('/api/llm-key', {key});
+			const info = await postJson('/api/llm', {key});
 			applyLlmInfo(info);
 			setApiKeyInput('');
 			await loadRetros();
@@ -231,7 +231,7 @@ export const RetroRoute: React.FC = () => {
 		}
 		setStep('loading');
 		try {
-			const created: NamedPage = await postJson('/api/notion/create-retro', {
+			const created: NamedPage = await postJson('/api/notion/retros', {
 				title
 			});
 			setRetro(created);
@@ -317,7 +317,7 @@ export const RetroRoute: React.FC = () => {
 		if (!retro || !message.trim()) return;
 		setMsgError(undefined);
 		try {
-			await postJson('/api/notion/message', {
+			await postJson('/api/notion/draft', {
 				pageId: retro.id,
 				message: message.trim()
 			});
