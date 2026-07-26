@@ -209,6 +209,14 @@ export const RetroRoute: React.FC = () => {
 				setStep('questions');
 				return;
 			}
+			// 답변까지 반영돼 풍부해진 초안을 노션 회고 페이지에 되써 저장(best-effort —
+			// 실패해도 재생 흐름은 막지 않는다). 노션 원문도 twee만큼 풍성해지도록.
+			if (res.draftUpdate?.trim()) {
+				putJson('/api/notion/draft', {
+					pageId: r.id,
+					draft: res.draftUpdate.trim()
+				}).catch(() => {});
+			}
 			finishTwee(res.twee);
 		} catch (e) {
 			fail(e);
@@ -527,9 +535,13 @@ export const RetroRoute: React.FC = () => {
 								<textarea
 									rows={2}
 									value={answers[i] ?? ''}
-									onChange={e =>
-										setAnswers(a => ({...a, [i]: e.target.value}))
-									}
+									onChange={e => {
+										// React 16은 SyntheticEvent를 풀링해 핸들러 종료 후 필드를 비운다.
+										// 함수형 업데이터는 나중에 실행되므로 값을 먼저 동기적으로 뽑아둔다
+										// (안 그러면 e.target이 null → 크래시).
+										const value = e.target.value;
+										setAnswers(a => ({...a, [i]: value}));
+									}}
 								/>
 							</div>
 						))}
