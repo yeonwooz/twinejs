@@ -2,7 +2,12 @@ import type {VercelRequest, VercelResponse} from '@vercel/node';
 import {getSession} from './_lib/session';
 import {resolveLlmKey} from './_lib/llm';
 import {resolveModel} from './_lib/models';
-import {translate, validateTwee, withCosmicUI} from './_lib/translate';
+import {
+	repairStartPassage,
+	translate,
+	validateTwee,
+	withCosmicUI
+} from './_lib/translate';
 
 // 초안 → twee 번역. LLM 키는 봉인 세션 쿠키(사용자 입력) 우선, 없으면 Notion 루트
 // 페이지 본문에서 서버측으로만 읽는다. 모델은 클라가 골라 보낸다(비밀 아님).
@@ -58,15 +63,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			return;
 		}
 
-		// 검증 → 문제 있으면 1회 자동 보정.
+		// 검증 → 문제 있으면 자동 보정. 흔한 실패(StoryData.start)는 코드로 먼저 고쳐
+		// LLM 재호출을 아끼고, 남은 문제(끊긴 링크 등)가 있을 때만 1회 LLM 재보정.
 		let problems = validateTwee(result.twee);
 		if (problems.length) {
-			result = await translate({
-				...common,
-				existingTwee: result.twee,
-				feedback: `다음 문제를 고쳐라: ${problems.join('; ')}`
-			});
-			problems = validateTwee(result.twee);
+			const repaired = repairStartPassage(result.twee);
+			if (repaired !== result.twee) {
+				result = {...result, twee: repaired};
+				problems = validateTwee(result.twee);
+			}
+			if (problems.length) {
+				result = await translate({
+					...common,
+					existingTwee: result.twee,
+					feedback: `다음 문제를 고쳐라: ${problems.join('; ')}`
+				});
+				problems = validateTwee(result.twee);
+			}
 		}
 
 		res.status(200).json({

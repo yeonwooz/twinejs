@@ -53,6 +53,31 @@ export function validateTwee(twee: string): string[] {
 	return problems;
 }
 
+// StoryData.start가 없거나 실제 구절을 안 가리키면 첫 서사 구절로 코드에서 지정한다.
+// 이게 자동보정 재시도(LLM 1회 추가 호출)를 흔히 유발하는 문제라, 코드로 먼저 때워
+// 비용을 아낀다. StoryData 블록 자체가 없거나 서사 구절이 없으면 손대지 않고 그대로 둔다.
+export function repairStartPassage(twee: string): string {
+	const sd = twee.match(/(:: StoryData\n)(\{[\s\S]*?\})/);
+	if (!sd) return twee;
+
+	const headings = [...twee.matchAll(/^:: (.+)$/gm)].map(m => m[1].trim());
+	const narrative = headings.filter(
+		h => h !== 'StoryTitle' && h !== 'StoryData' && !/\[stylesheet\]$/.test(h)
+	);
+	if (!narrative.length) return twee;
+
+	let data: any;
+	try {
+		data = JSON.parse(sd[2]);
+	} catch {
+		return twee;
+	}
+	if (data.start && narrative.includes(data.start)) return twee; // 이미 정상
+
+	data.start = narrative[0];
+	return twee.replace(sd[0], sd[1] + JSON.stringify(data, null, 2));
+}
+
 export function withCosmicUI(twee: string): string {
 	const css = readScript('cosmic-stylesheet.txt').trimEnd();
 	const stripped = twee.replace(
@@ -100,14 +125,23 @@ async function translateAnthropic(
 	user: string
 ): Promise<TranslateResult> {
 	const anthropic = new Anthropic({apiKey: input.apiKey});
+	const outputConfig: any = {
+		format: {type: 'json_schema', schema: OUTPUT_SCHEMA}
+	};
 	const req: any = {
 		model: input.model,
 		max_tokens: 16000,
 		system,
-		output_config: {format: {type: 'json_schema', schema: OUTPUT_SCHEMA}},
 		messages: [{role: 'user', content: user}]
 	};
-	if (ADAPTIVE_THINKING.has(input.model)) req.thinking = {type: 'adaptive'};
+	if (ADAPTIVE_THINKING.has(input.model)) {
+		req.thinking = {type: 'adaptive'};
+		// effort 기본값은 high(사고 토큰 최대 = 최고 비용). 회고→twee는 형식이 정해진
+		// 작업이라 medium이면 충분 — 사고량을 낮춰 비용을 아낀다. (effort는 adaptive
+		// 지원 모델에서만 유효; Haiku 등은 미지원이라 생략)
+		outputConfig.effort = 'medium';
+	}
+	req.output_config = outputConfig;
 
 	const response = await anthropic.messages.create(req);
 	const text = (response.content as any[])

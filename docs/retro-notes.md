@@ -95,3 +95,45 @@ Notion에 쓴 주간 회고를 Twine(twinejs)의 **twee 인터랙티브 픽션**
 - Phase 2·3은 **배포해야 검증 가능**(로컬에서 OAuth 왕복 불가).
 - 선행: Notion **public OAuth 통합 등록**(client_id/secret, redirect URI = Vercel 도메인) + Vercel 프로젝트.
 - 공유 배포 시 "내 배포가 남의 키를 거친다"는 신뢰 부담 → 사용법에 "키는 본인 브라우저/서버 무저장, 재생 격리" 명시.
+
+## 2026-07-26 작업 (앱 내 작성 · 멀티 프로바이더 · 봉인 쿠키 키 · 비용 절감)
+
+### 회고 플로우 개편
+- **앱에서 자연어로 회고 작성(compose)** → 노션 주차 페이지 본문에 write-back. 노션 본문을
+  미리 채워둘 필요 없음(비어 있어도 앱에서 입력). `api/notion/draft.ts`에 PUT 추가,
+  `notion.ts`에 `writeDraftText`(하위 페이지/DB 보존, 텍스트 블록만 교체).
+- **진입 시 회고 제목 필수 입력**(중복 금지). "N주차"에 국한 안 됨 — 임의 제목 허용.
+  새 제목이면 앱이 노션 루트 아래 페이지를 자동 생성(`api/notion/create-retro.ts`,
+  `createRetroPage`). 기존 회고 목록은 `api/notion/retros.ts`(child_page 전체, stories DB 제외).
+- 모든 단계에 **홈 버튼**.
+
+### 멀티 프로바이더 (Anthropic + OpenAI)
+- `api/_lib/translate.ts`가 프로바이더별 분기: Anthropic `output_config.json_schema`,
+  OpenAI `chat.completions` + `response_format.json_schema(strict)`. 같은 `OUTPUT_SCHEMA` 공유.
+- `api/_lib/models.ts`: 모델 카탈로그(비용 힌트) + `providerFromKey`(키 접두사 판별) + `resolveModel`.
+- UI에 **모델 선택 드롭다운**(compose·refine), `api/notion/llm-info.ts`가 프로바이더별 목록 제공.
+
+### AI 키 저장 방식 변경 (⚠️ 위 옛 노트 갱신)
+- 예전: "Anthropic 키 = 노션 설정 페이지 평문". **→ 이제 노션 토큰과 동일하게 AES-256-GCM
+  봉인 httpOnly 세션 쿠키**에 저장. 사용자가 앱의 키 입력 화면에서 한 번 붙여넣음
+  (`api/llm-key.ts` 저장, `api/_lib/llm.ts` `resolveLlmKey`: 쿠키 우선 → 노션 페이지 폴백).
+- 세션에 `llmKey`/`llmProvider` 필드 추가(`api/_lib/session.ts`).
+- 키 입력 화면 안내: **단기 유효 · 저비용 상한 · 사용 후 revoke** 권고.
+
+### 비용 절감
+- **effort=medium** (Anthropic adaptive 지원 모델). 기존엔 effort 미설정 → 기본 high(사고 토큰 최대).
+  회고→twee는 형식 고정 작업이라 medium으로 충분. 기본 모델은 Opus 4.8 유지(창작 품질 우선,
+  BYO-key라 비용은 사용자 몫 + 드롭다운으로 다운그레이드 가능).
+- **자동보정 재시도 축소**: `StoryData.start` 누락/오류는 `repairStartPassage`로 **코드에서 첫
+  서사 구절로 지정** → LLM 재호출 절약. 끊긴 링크 등 코드로 못 고치는 문제일 때만 1회 LLM 재보정.
+- (프롬프트 캐싱은 시스템 프롬프트가 ~650토큰뿐, 최소 캐시 기준 4096 미달 → 효과 없어 미적용.)
+
+### AI 사용 현황 (비용 감사)
+- LLM 호출은 3곳뿐: `api/_lib/translate.ts`(웹), `scripts/retro.mjs`(로컬 `npm start`),
+  `api/translate.ts`의 자동보정 재시도. 로드·목록·검색엔 AI 없음, 검증은 순수 정규식.
+  숨은/중복 호출 없음. (retro.mjs는 로컬·개발자 비용이라 effort 튜닝 후순위로 남김.)
+
+### 남은 것
+- OpenAI 경로는 실제 키로 미검증(특히 `gpt-5`의 strict json_schema). 안전한 건 `gpt-4o(-mini)`.
+- 로컬 `npm start`(retro.mjs)는 아직 Anthropic 전용 · effort 미적용.
+- 배포(Vercel)에서만 `/api/*` 동작 — 로컬 `npm run dev`는 `/__notion-sync/*`만.
