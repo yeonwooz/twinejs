@@ -1,13 +1,15 @@
 import type {VercelRequest, VercelResponse} from '@vercel/node';
 import {getSession} from './_lib/session';
-import {readAnthropicKey} from './_lib/notion';
+import {resolveLlmKey} from './_lib/llm';
+import {resolveModel} from './_lib/models';
 import {translate, validateTwee, withCosmicUI} from './_lib/translate';
 
-// 초안 → twee 번역. Anthropic 키는 사용자 Notion 루트 페이지 본문에서 서버측으로만 읽는다.
+// 초안 → twee 번역. LLM 키는 봉인 세션 쿠키(사용자 입력) 우선, 없으면 Notion 루트
+// 페이지 본문에서 서버측으로만 읽는다. 모델은 클라가 골라 보낸다(비밀 아님).
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const s = getSession(req);
-	if (!s?.token || !s.rootId) {
-		res.status(400).json({error: 'Notion 연결/루트 선택이 필요합니다.'});
+	if (!s?.token) {
+		res.status(400).json({error: 'Notion 연결이 필요합니다.'});
 		return;
 	}
 	const body = (req.body ?? {}) as {
@@ -16,6 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		qa?: [string, string][];
 		existingTwee?: string;
 		feedback?: string;
+		model?: string;
 	};
 	if (!body.draft) {
 		res.status(400).json({error: 'draft required'});
@@ -23,17 +26,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	}
 
 	try {
-		const apiKey = await readAnthropicKey(s.token, s.rootId);
-		if (!apiKey) {
+		const key = await resolveLlmKey(s);
+		if (!key) {
 			res.status(400).json({
-				error:
-					'회고 루트 페이지 본문에 "ANTHROPIC_API_KEY: sk-ant-..." 한 줄을 추가해 주세요.'
+				error: 'AI 모델 API 키가 없어요. 앱에서 키를 먼저 입력해 주세요.'
 			});
 			return;
 		}
 
 		const common = {
-			apiKey,
+			apiKey: key.apiKey,
+			provider: key.provider,
+			model: resolveModel(key.provider, body.model),
 			draftText: body.draft,
 			weekLabel: body.weekLabel ?? '',
 			qa: body.qa

@@ -16,6 +16,10 @@ export interface Session {
 	// 회고 루트 페이지 id (위저드에서 고름).
 	rootId?: string;
 	workspaceName?: string;
+	// LLM API 키(사용자가 앱에서 입력). Notion 토큰과 동일하게 이 봉인 쿠키에만 담긴다
+	// — 평문으로 Notion 페이지/클라 JS/서버 DB 어디에도 남기지 않는다.
+	llmKey?: string;
+	llmProvider?: 'anthropic' | 'openai';
 }
 
 function key() {

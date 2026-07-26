@@ -9,7 +9,9 @@ type Step =
 	| 'loading'
 	| 'connect'
 	| 'root'
-	| 'week'
+	| 'apikey'
+	| 'select'
+	| 'compose'
 	| 'questions'
 	| 'translating'
 	| 'done'
@@ -19,8 +21,11 @@ interface NamedPage {
 	id: string;
 	title: string;
 }
-interface WeekPage extends NamedPage {
-	week: number;
+
+interface ModelOption {
+	id: string;
+	label: string;
+	hint: string;
 }
 
 async function api(path: string, opts?: RequestInit) {
@@ -38,12 +43,14 @@ async function api(path: string, opts?: RequestInit) {
 	return res.json();
 }
 
-const postJson = (path: string, data: unknown) =>
+const sendJson = (method: string) => (path: string, data: unknown) =>
 	api(path, {
-		method: 'POST',
+		method,
 		headers: {'Content-Type': 'application/json'},
 		body: JSON.stringify(data)
 	});
+const postJson = sendJson('POST');
+const putJson = sendJson('PUT');
 
 export const RetroRoute: React.FC = () => {
 	const history = useHistory();
@@ -53,9 +60,16 @@ export const RetroRoute: React.FC = () => {
 
 	const [step, setStep] = React.useState<Step>('loading');
 	const [error, setError] = React.useState<string>();
-	const [pages, setPages] = React.useState<NamedPage[]>([]);
-	const [weeks, setWeeks] = React.useState<WeekPage[]>([]);
-	const [week, setWeek] = React.useState<WeekPage>();
+	const [pages, setPages] = React.useState<NamedPage[]>([]); // 루트 후보
+	const [retros, setRetros] = React.useState<NamedPage[]>([]); // 기존 회고
+	const [retro, setRetro] = React.useState<NamedPage>(); // 현재 회고
+	const [newTitle, setNewTitle] = React.useState('');
+	const [titleError, setTitleError] = React.useState<string>();
+	const [models, setModels] = React.useState<ModelOption[]>([]);
+	const [provider, setProvider] = React.useState<string | null>(null);
+	const [model, setModel] = React.useState<string>('');
+	const [apiKeyInput, setApiKeyInput] = React.useState('');
+	const [keyError, setKeyError] = React.useState<string>();
 	const [draft, setDraft] = React.useState('');
 	const [questions, setQuestions] = React.useState<string[]>([]);
 	const [answers, setAnswers] = React.useState<Record<number, string>>({});
@@ -83,16 +97,53 @@ export const RetroRoute: React.FC = () => {
 		}
 	}, [fail]);
 
-	const loadWeeks = React.useCallback(async () => {
+	// 설정된 LLM 키로 판별된 프로바이더의 모델 목록을 받아 드롭다운을 채운다.
+	// 반환값으로 키 유무를 상위에서 판단한다.
+	const applyLlmInfo = React.useCallback(
+		(info: {
+			provider: string | null;
+			models?: ModelOption[];
+			defaultModel?: string | null;
+		}) => {
+			setProvider(info.provider);
+			setModels(info.models ?? []);
+			setModel(prev =>
+				prev && (info.models ?? []).some(m => m.id === prev)
+					? prev
+					: info.defaultModel ?? ''
+			);
+		},
+		[]
+	);
+
+	const loadRetros = React.useCallback(async () => {
 		setStep('loading');
 		try {
-			const {weeks} = await api('/api/notion/weeks');
-			setWeeks(weeks);
-			setStep('week');
+			const {retros} = await api('/api/notion/retros');
+			setRetros(retros);
+			setNewTitle('');
+			setTitleError(undefined);
+			setStep('select');
 		} catch (e) {
 			fail(e);
 		}
 	}, [fail]);
+
+	// 루트까지 정해진 뒤: AI 키가 있으면 회고 목록으로, 없으면 키 입력 단계로.
+	const afterConfig = React.useCallback(async () => {
+		setStep('loading');
+		try {
+			const info = await api('/api/notion/llm-info');
+			applyLlmInfo(info);
+			if (!info.provider) {
+				setStep('apikey');
+				return;
+			}
+			await loadRetros();
+		} catch (e) {
+			fail(e);
+		}
+	}, [applyLlmInfo, loadRetros, fail]);
 
 	// 최초: 세션 상태로 진입 단계 결정.
 	React.useEffect(() => {
@@ -100,23 +151,43 @@ export const RetroRoute: React.FC = () => {
 			.then(s => {
 				if (!s.connected) setStep('connect');
 				else if (!s.configured) loadRoots();
-				else loadWeeks();
+				else afterConfig();
 			})
 			.catch(fail);
-	}, [fail, loadRoots, loadWeeks]);
+	}, [fail, loadRoots, afterConfig]);
 
 	async function chooseRoot(pageId: string) {
 		setStep('loading');
 		try {
 			await postJson('/api/notion/select-root', {pageId});
-			await loadWeeks();
+			await afterConfig();
 		} catch (e) {
 			fail(e);
 		}
 	}
 
+	// 사용자가 입력한 AI 키를 봉인 세션 쿠키에 저장(서버). 성공 시 모델 목록 갱신 후 진행.
+	async function submitKey() {
+		const key = apiKeyInput.trim();
+		setKeyError(undefined);
+		if (!key) {
+			setKeyError('API 키를 입력해 주세요.');
+			return;
+		}
+		setStep('loading');
+		try {
+			const info = await postJson('/api/llm-key', {key});
+			applyLlmInfo(info);
+			setApiKeyInput('');
+			await loadRetros();
+		} catch (e) {
+			setKeyError(e instanceof Error ? e.message : String(e));
+			setStep('apikey');
+		}
+	}
+
 	async function runTranslate(
-		w: WeekPage,
+		r: NamedPage,
 		draftText: string,
 		qaList: [string, string][],
 		existingTwee?: string,
@@ -124,51 +195,101 @@ export const RetroRoute: React.FC = () => {
 	) {
 		setStep('translating');
 		try {
-			const r = await postJson('/api/translate', {
-				weekLabel: w.title,
+			const res = await postJson('/api/translate', {
+				weekLabel: r.title,
 				draft: draftText,
 				qa: qaList,
 				existingTwee,
-				feedback: fb
+				feedback: fb,
+				model: model || undefined
 			});
-			if (r.questions?.length) {
-				setQuestions(r.questions);
+			if (res.questions?.length) {
+				setQuestions(res.questions);
 				setAnswers({});
 				setStep('questions');
 				return;
 			}
-			finishTwee(r.twee);
+			finishTwee(res.twee);
 		} catch (e) {
 			fail(e);
 		}
 	}
 
-	async function chooseWeek(w: WeekPage) {
-		setWeek(w);
+	// 새 회고 제목 입력 → 중복 검사 → 노션 페이지 생성 → compose.
+	async function startNewRetro() {
+		const title = newTitle.trim();
+		setTitleError(undefined);
+		if (!title) {
+			setTitleError('회고 제목을 입력해 주세요.');
+			return;
+		}
+		if (
+			retros.some(r => r.title.trim().toLowerCase() === title.toLowerCase())
+		) {
+			setTitleError(`"${title}" 이름의 회고가 이미 있어요. 다른 제목을 써 주세요.`);
+			return;
+		}
+		setStep('loading');
+		try {
+			const created: NamedPage = await postJson('/api/notion/create-retro', {
+				title
+			});
+			setRetro(created);
+			setRetros(rs => [created, ...rs]);
+			setQa([]);
+			setNewTitle('');
+			setDraft('');
+			setStep('compose');
+		} catch (e) {
+			// 중복(409) 등은 목록 화면에 인라인으로 안내(에러 페이지로 안 넘어감).
+			setTitleError(e instanceof Error ? e.message : String(e));
+			setStep('select');
+		}
+	}
+
+	// 기존 회고 선택 → 본문 읽기. 비었으면 compose, 있으면 바로 번역.
+	async function chooseRetro(r: NamedPage) {
+		setRetro(r);
 		setQa([]);
 		setStep('loading');
 		try {
 			const {draft} = await api(
-				`/api/notion/draft?pageId=${encodeURIComponent(w.id)}`
+				`/api/notion/draft?pageId=${encodeURIComponent(r.id)}`
 			);
 			if (!draft) {
-				throw new Error(`"${w.title}" 페이지 본문에 회고 내용이 없어요.`);
+				setDraft('');
+				setStep('compose');
+				return;
 			}
 			setDraft(draft);
-			await runTranslate(w, draft, []);
+			await runTranslate(r, draft, []);
+		} catch (e) {
+			fail(e);
+		}
+	}
+
+	// compose 본문을 노션 회고 페이지에 저장(write-back)한 뒤 번역.
+	async function submitCompose() {
+		if (!retro) return;
+		const text = draft.trim();
+		if (!text) return;
+		setStep('loading');
+		try {
+			await putJson('/api/notion/draft', {pageId: retro.id, draft: text});
+			await runTranslate(retro, text, []);
 		} catch (e) {
 			fail(e);
 		}
 	}
 
 	function submitAnswers() {
-		if (!week) return;
+		if (!retro) return;
 		const merged: [string, string][] = [
 			...qa,
 			...questions.map((q, i): [string, string] => [q, answers[i] ?? ''])
 		];
 		setQa(merged);
-		runTranslate(week, draft, merged);
+		runTranslate(retro, draft, merged);
 	}
 
 	function finishTwee(finalTwee: string) {
@@ -186,18 +307,18 @@ export const RetroRoute: React.FC = () => {
 		: undefined;
 
 	function refine() {
-		if (!week || !twee) return;
+		if (!retro || !twee) return;
 		const fb = feedback.trim();
 		setFeedback('');
-		runTranslate(week, draft, qa, twee, fb || undefined);
+		runTranslate(retro, draft, qa, twee, fb || undefined);
 	}
 
 	async function saveMessage() {
-		if (!week || !message.trim()) return;
+		if (!retro || !message.trim()) return;
 		setMsgError(undefined);
 		try {
 			await postJson('/api/notion/message', {
-				pageId: week.id,
+				pageId: retro.id,
 				message: message.trim()
 			});
 			setMsgSaved(true);
@@ -211,7 +332,16 @@ export const RetroRoute: React.FC = () => {
 	return (
 		<div className="retro-route">
 			<div className="retro-card">
-				<h1>인터랙티브 회고</h1>
+				<div className="retro-header">
+					<h1>인터랙티브 회고</h1>
+					<button
+						className="retro-home"
+						onClick={() => history.push('/')}
+						title="스토리 목록으로"
+					>
+						🏠 홈으로
+					</button>
+				</div>
 
 				{step === 'loading' && <p className="retro-muted">불러오는 중…</p>}
 
@@ -220,7 +350,7 @@ export const RetroRoute: React.FC = () => {
 						{denied && (
 							<p className="retro-muted">연결이 취소됐어요. 다시 시도해 주세요.</p>
 						)}
-						<p>Notion을 연결하면 그 주 회고를 인터랙티브 스토리로 만들 수 있어요.</p>
+						<p>Notion을 연결하면 회고를 인터랙티브 스토리로 만들 수 있어요.</p>
 						<a className="retro-btn primary" href="/api/notion/login">
 							Notion으로 연결
 						</a>
@@ -229,7 +359,7 @@ export const RetroRoute: React.FC = () => {
 
 				{step === 'root' && (
 					<>
-						<p>회고가 들어 있는 루트 페이지를 골라주세요.</p>
+						<p>회고를 담아 둘 루트 페이지를 골라주세요.</p>
 						<ul className="retro-list">
 							{pages.map(p => (
 								<li key={p.id}>
@@ -248,30 +378,143 @@ export const RetroRoute: React.FC = () => {
 					</>
 				)}
 
-				{step === 'week' && (
+				{step === 'apikey' && (
 					<>
-						<p>몇 주차 회고를 만들까요?</p>
-						<ul className="retro-list">
-							{weeks.map(w => (
-								<li key={w.id}>
-									<button onClick={() => chooseWeek(w)}>{w.title}</button>
-								</li>
-							))}
-							{weeks.length === 0 && (
-								<li className="retro-muted">
-									「N주차 회고」 페이지가 없어요. Notion에 먼저 만들어 주세요.
-								</li>
-							)}
-						</ul>
-						<button className="retro-back" onClick={loadRoots}>
-							← 다른 Notion 페이지(루트) 다시 선택
+						<p>AI 모델 API 키를 입력해 주세요.</p>
+						<p className="retro-muted">
+							Anthropic(<code>sk-ant-...</code>) 또는 OpenAI(<code>sk-...</code>) 키.
+							키는 암호화돼 이 브라우저 세션 쿠키에만 저장돼요 — Notion·화면·서버 DB
+							어디에도 평문으로 남지 않아요.
+						</p>
+						<p className="retro-warn">
+							🔒 안전을 위해 <strong>유효기간이 짧고 사용 한도(비용 상한)를 낮게 건
+							키</strong>를 발급해 쓰시길 권해요. 만에 하나 키가 노출돼도 피해가 작게 끝나요.
+							다 쓰면 프로바이더 콘솔에서 키를 폐기(revoke)하세요.
+						</p>
+						<div className="retro-new">
+							<input
+								type="password"
+								value={apiKeyInput}
+								placeholder="sk-ant-... / sk-..."
+								onChange={e => {
+									setApiKeyInput(e.target.value);
+									setKeyError(undefined);
+								}}
+								onKeyDown={e => {
+									if (e.key === 'Enter') submitKey();
+								}}
+							/>
+							<button
+								className="retro-btn primary"
+								onClick={submitKey}
+								disabled={!apiKeyInput.trim()}
+							>
+								저장하고 계속
+							</button>
+						</div>
+						{keyError && <p className="retro-error">{keyError}</p>}
+					</>
+				)}
+
+				{step === 'select' && (
+					<>
+						<p>회고 제목을 입력해 새로 시작하세요. (필수 · 이름은 겹칠 수 없어요)</p>
+						<div className="retro-new">
+							<input
+								type="text"
+								value={newTitle}
+								placeholder="예: 3주차 회고 / 첫 배포 회고 / 2026 상반기"
+								onChange={e => {
+									setNewTitle(e.target.value);
+									setTitleError(undefined);
+								}}
+								onKeyDown={e => {
+									if (e.key === 'Enter') startNewRetro();
+								}}
+							/>
+							<button
+								className="retro-btn primary"
+								onClick={startNewRetro}
+								disabled={!newTitle.trim()}
+							>
+								새 회고 시작
+							</button>
+						</div>
+						{titleError && <p className="retro-error">{titleError}</p>}
+
+						{retros.length > 0 && (
+							<>
+								<p className="retro-muted">이어서 작업할 기존 회고</p>
+								<ul className="retro-list">
+									{retros.map(r => (
+										<li key={r.id}>
+											<button onClick={() => chooseRetro(r)}>{r.title}</button>
+										</li>
+									))}
+								</ul>
+							</>
+						)}
+						<div className="retro-back-row">
+							<button className="retro-back" onClick={loadRoots}>
+								← 다른 Notion 페이지(루트) 다시 선택
+							</button>
+							<button
+								className="retro-back"
+								onClick={() => {
+									setKeyError(undefined);
+									setStep('apikey');
+								}}
+							>
+								AI 키 변경
+							</button>
+						</div>
+					</>
+				)}
+
+				{step === 'compose' && (
+					<>
+						<p>
+							<strong>{retro?.title}</strong> — 회고를 자연어로 자유롭게 써 주세요.
+						</p>
+						<textarea
+							className="retro-compose"
+							rows={12}
+							value={draft}
+							onChange={e => setDraft(e.target.value)}
+							placeholder="이번 기간 동안 어떤 결정을 했고, 무엇이 후회되고, 무엇이 좋았는지 편하게 적어 주세요. 저장하면 Notion 그 회고 페이지에도 남아요."
+						/>
+						{models.length > 0 && (
+							<div className="retro-model">
+								<label>
+									모델 선택{provider ? ` (${provider})` : ''} — 비용/품질을 골라요
+								</label>
+								<select value={model} onChange={e => setModel(e.target.value)}>
+									{models.map(m => (
+										<option key={m.id} value={m.id}>
+											{m.label} — {m.hint}
+										</option>
+									))}
+								</select>
+							</div>
+						)}
+						<div className="retro-actions">
+							<button
+								className="retro-btn primary"
+								onClick={submitCompose}
+								disabled={!draft.trim()}
+							>
+								인터랙티브 회고로 만들기
+							</button>
+						</div>
+						<button className="retro-back" onClick={loadRetros}>
+							← 회고 목록
 						</button>
 					</>
 				)}
 
 				{step === 'translating' && (
 					<p className="retro-muted">
-						{week?.title} 을(를) 평행우주 회고로 번역하는 중…
+						{retro?.title} 을(를) 평행우주 회고로 번역하는 중…
 					</p>
 				)}
 
@@ -322,7 +565,7 @@ export const RetroRoute: React.FC = () => {
 						</div>
 
 						<div className="retro-message">
-							<label>그때의 나에게 한마디 (저장하면 Notion 그 주차 페이지에 남아요)</label>
+							<label>그때의 나에게 한마디 (저장하면 Notion 그 회고 페이지에 남아요)</label>
 							<textarea
 								rows={3}
 								value={message}
@@ -351,13 +594,28 @@ export const RetroRoute: React.FC = () => {
 								onChange={e => setFeedback(e.target.value)}
 								placeholder="예: 우주 β의 결과를 더 극적으로"
 							/>
+							{models.length > 0 && (
+								<div className="retro-model">
+									<label>모델 선택 — 비용/품질을 골라요</label>
+									<select
+										value={model}
+										onChange={e => setModel(e.target.value)}
+									>
+										{models.map(m => (
+											<option key={m.id} value={m.id}>
+												{m.label} — {m.hint}
+											</option>
+										))}
+									</select>
+								</div>
+							)}
 							<button className="retro-btn" onClick={refine}>
 								보완해서 다시 만들기
 							</button>
 						</div>
 						<div className="retro-back-row">
-							<button className="retro-back" onClick={loadWeeks}>
-								← 다른 주차
+							<button className="retro-back" onClick={loadRetros}>
+								← 다른 회고
 							</button>
 							<button className="retro-back" onClick={loadRoots}>
 								← 다른 Notion 페이지

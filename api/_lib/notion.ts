@@ -69,14 +69,19 @@ export async function readBlockText(
 	return text;
 }
 
-// 회고 루트(또는 지정) 페이지 본문에서 ANTHROPIC_API_KEY를 읽는다.
-export async function readAnthropicKey(
+// 회고 루트(또는 지정) 페이지 본문에서 LLM API 키를 읽는다. Anthropic/OpenAI 둘 다
+// 지원 — 접두사로 프로바이더를 판별한다. Anthropic을 먼저 보는 이유: sk-ant- 도
+// sk- 로 시작하므로 순서가 중요.
+export async function readLlmKey(
 	token: string,
 	pageId: string
-): Promise<string | undefined> {
+): Promise<{apiKey: string; provider: 'anthropic' | 'openai'} | undefined> {
 	const text = await readBlockText(token, pageId);
-	const m = text.match(/ANTHROPIC_API_KEY\s*[:=]\s*(sk-ant-[A-Za-z0-9_-]+)/);
-	return m ? m[1] : undefined;
+	const anth = text.match(/ANTHROPIC_API_KEY\s*[:=]\s*(sk-ant-[A-Za-z0-9_-]+)/);
+	if (anth) return {apiKey: anth[1], provider: 'anthropic'};
+	const oai = text.match(/OPENAI_API_KEY\s*[:=]\s*(sk-[A-Za-z0-9_-]+)/);
+	if (oai) return {apiKey: oai[1], provider: 'openai'};
+	return undefined;
 }
 
 // --- stories DB (twee 저장소) — vite-plugin-notion-sync.ts와 동일 스키마 ---
@@ -258,6 +263,64 @@ export async function weekPages(token: string, rootId: string) {
 		.filter((p: {title: string}) => /주차/.test(p.title))
 		.map((p: {id: string; title: string}) => ({...p, week: weekNumOf(p.title)}))
 		.sort((a: {week: number}, b: {week: number}) => b.week - a.week);
+}
+
+// 루트 아래에 회고용 child page를 새로 만든다(페이지 제목 = 회고 이름). 본문은
+// 비어 있고 앱에서 자연어로 채운다(writeDraftText). 중복 검사는 호출부에서 한다.
+export async function createRetroPage(
+	token: string,
+	rootId: string,
+	title: string
+): Promise<{id: string; title: string}> {
+	const page = await notion(token, 'POST', '/pages', {
+		parent: {type: 'page_id', page_id: rootId},
+		properties: {
+			title: {title: [{type: 'text', text: {content: title}}]}
+		}
+	});
+	return {id: page.id, title};
+}
+
+// 자연어 회고 본문을 문단 블록들로 변환한다. 줄 단위로 나누고, 한 줄이
+// 너무 길면(>CHUNK) rich_text item을 쪼갠다. 빈 줄도 문단으로 보존한다.
+export function textToParagraphBlocks(text: string) {
+	return text.split('\n').map(line => {
+		const chunks: string[] = [];
+		for (let i = 0; i < line.length; i += CHUNK) chunks.push(line.slice(i, i + CHUNK));
+		return {
+			object: 'block',
+			type: 'paragraph',
+			paragraph: {
+				rich_text: chunks.map(content => ({type: 'text', text: {content}}))
+			}
+		};
+	});
+}
+
+// 주차 페이지 본문(회고 초안)을 앱에서 쓴 자연어로 교체한다. 하위 페이지/DB는
+// 보존하고 텍스트 블록만 지운 뒤(= readBlockText가 읽는 대상) 새 문단을 넣는다.
+export async function writeDraftText(
+	token: string,
+	pageId: string,
+	text: string
+) {
+	const {results} = await notion(
+		token,
+		'GET',
+		`/blocks/${pageId}/children?page_size=100`
+	);
+	for (const b of results) {
+		if (b.type === 'child_page' || b.type === 'child_database') continue;
+		await notion(token, 'DELETE', `/blocks/${b.id}`);
+	}
+
+	const blocks = textToParagraphBlocks(text);
+	// PATCH children은 요청당 최대 100 블록.
+	for (let i = 0; i < blocks.length; i += ITEMS_PER_BLOCK) {
+		await notion(token, 'PATCH', `/blocks/${pageId}/children`, {
+			children: blocks.slice(i, i + ITEMS_PER_BLOCK)
+		});
+	}
 }
 
 // "그때의 나에게" 메시지를 주차 페이지 본문 끝에 callout으로 덧붙인다(기존 내용 보존).
