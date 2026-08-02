@@ -69,20 +69,9 @@ export async function readBlockText(
 	return text;
 }
 
-// 회고 루트(또는 지정) 페이지 본문에서 LLM API 키를 읽는다. Anthropic/OpenAI 둘 다
-// 지원 — 접두사로 프로바이더를 판별한다. Anthropic을 먼저 보는 이유: sk-ant- 도
-// sk- 로 시작하므로 순서가 중요.
-export async function readLlmKey(
-	token: string,
-	pageId: string
-): Promise<{apiKey: string; provider: 'anthropic' | 'openai'} | undefined> {
-	const text = await readBlockText(token, pageId);
-	const anth = text.match(/ANTHROPIC_API_KEY\s*[:=]\s*(sk-ant-[A-Za-z0-9_-]+)/);
-	if (anth) return {apiKey: anth[1], provider: 'anthropic'};
-	const oai = text.match(/OPENAI_API_KEY\s*[:=]\s*(sk-[A-Za-z0-9_-]+)/);
-	if (oai) return {apiKey: oai[1], provider: 'openai'};
-	return undefined;
-}
+// (readLlmKey 제거: 루트 페이지 본문에서 평문 API 키를 긁어오던 폴백. Notion 페이지는
+// 영구·공유·검색되는 저장소라 키를 둘 곳이 아니다. 키는 봉인 세션 쿠키에만 담는다 —
+// api/_lib/llm.ts 참고.)
 
 // --- stories DB (twee 저장소) — vite-plugin-notion-sync.ts와 동일 스키마 ---
 

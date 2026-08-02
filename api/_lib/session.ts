@@ -20,6 +20,9 @@ export interface Session {
 	// — 평문으로 Notion 페이지/클라 JS/서버 DB 어디에도 남기지 않는다.
 	llmKey?: string;
 	llmProvider?: 'anthropic' | 'openai';
+	// 만료 시각(unix 초). Set-Cookie의 Max-Age는 브라우저만 지키므로, 쿠키 값을
+	// 복사해 두면 봉인 자체는 무기한 유효했다. 봉인 안에 만료를 넣어 서버가 검사한다.
+	exp?: number;
 }
 
 function key() {
@@ -49,7 +52,13 @@ export function unseal(value: string | undefined): Session | null {
 		const decipher = crypto.createDecipheriv('aes-256-gcm', key(), iv);
 		decipher.setAuthTag(tag);
 		const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
-		return JSON.parse(pt.toString('utf8')) as Session;
+		const s = JSON.parse(pt.toString('utf8')) as Session;
+		// 만료 검사(fail closed). exp가 없는 쿠키는 만료 도입 전에 발급된 것 —
+		// 무기한 유효하던 바로 그 쿠키들이라 만료 취급한다(재로그인 1회 필요).
+		if (typeof s.exp !== 'number' || s.exp <= Math.floor(Date.now() / 1000)) {
+			return null;
+		}
+		return s;
 	} catch {
 		return null;
 	}
@@ -103,5 +112,14 @@ export function getSession(req: IncomingMessage): Session | null {
 }
 
 export function writeSession(res: ServerResponse, session: Session) {
-	setCookie(res, SESSION_COOKIE, seal(session), SESSION_MAX_AGE);
+	// exp는 쓸 때마다 새로 계산한다 — 호출부가 {...s, ...} 로 옛 exp를 실어보내도
+	// 덮어쓰기 위해서. Max-Age와 같은 슬라이딩 30일 창이 된다.
+	const exp = Math.floor(Date.now() / 1000) + SESSION_MAX_AGE;
+	setCookie(res, SESSION_COOKIE, seal({...session, exp}), SESSION_MAX_AGE);
+}
+
+// 세션 무효화. 서버 세션 저장소가 없으므로 서버가 할 수 있는 건 쿠키 삭제뿐이다
+// — 이미 유출된 쿠키 값까지 죽이려면 COOKIE_SECRET을 회전해야 한다(전체 로그아웃).
+export function clearSession(res: ServerResponse) {
+	clearCookie(res, SESSION_COOKIE);
 }

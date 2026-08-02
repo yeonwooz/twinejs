@@ -1,5 +1,5 @@
 import type {VercelRequest, VercelResponse} from '@vercel/node';
-import {getSession, writeSession} from './_lib/session';
+import {getSession, Session, writeSession} from './_lib/session';
 import {resolveLlmKey} from './_lib/llm';
 import {
 	DEFAULT_MODEL,
@@ -37,7 +37,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		return;
 	}
 
-	// GET: 설정된 키(쿠키 우선, Notion 페이지 폴백)로 프로바이더·모델 목록 반환.
+	// DELETE: 저장된 LLM 키만 지운다(Notion 연결은 유지). 키를 잘못 넣었거나
+	// 회수하고 싶을 때 사용 — 세션 전체를 끊으려면 DELETE /api/session.
+	if (req.method === 'DELETE') {
+		const next: Session = {...s};
+		delete next.llmKey;
+		delete next.llmProvider;
+		writeSession(res, next);
+		res.status(200).json({provider: null, models: [], defaultModel: null});
+		return;
+	}
+
+	// GET: 봉인 쿠키에 저장된 키로 프로바이더·모델 목록 반환.
 	// Anthropic 기본값은 계정의 최신 Opus를 런타임 발견해 추종.
 	try {
 		const key = await resolveLlmKey(s);
