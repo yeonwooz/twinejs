@@ -286,8 +286,25 @@ export function textToParagraphBlocks(text: string) {
 	});
 }
 
-// 주차 페이지 본문(회고 초안)을 앱에서 쓴 자연어로 교체한다. 하위 페이지/DB는
-// 보존하고 텍스트 블록만 지운 뒤(= readBlockText가 읽는 대상) 새 문단을 넣는다.
+// API 응답의 rich_text를 그대로 되돌려보내면 plain_text 같은 읽기 전용 필드가 섞인다.
+// 쓰기에 유효한 필드만 남겨 재구성한다.
+function rewritableRichText(richText: any[] = []) {
+	return richText
+		.filter(r => r?.type === 'text' && r.text)
+		.map(r => ({
+			type: 'text',
+			text: {content: r.text.content ?? '', link: r.text.link ?? null},
+			annotations: r.annotations
+		}));
+}
+
+// 주차 페이지 본문(회고 초안)을 앱에서 쓴 자연어로 교체한다. 하위 페이지/DB는 보존하고
+// 텍스트 블록만 지운 뒤(= readBlockText가 읽는 대상) 새 문단을 넣는다.
+//
+// appendMessage가 남긴 "그때의 나에게" callout은 지웠다가 초안 뒤에 다시 붙인다. 초안
+// 되쓰기는 회고 본문을 갱신하는 동작이지 플레이어가 보낸 메시지를 지우는 동작이 아니다.
+// (제자리 보존이 아니라 재생성인 이유: 2022-06-28 API의 children PATCH는 항상 페이지
+// 끝에 덧붙여서, callout을 남겨두면 새 초안이 그 아래로 들어가 순서가 뒤집힌다.)
 export async function writeDraftText(
 	token: string,
 	pageId: string,
@@ -298,12 +315,25 @@ export async function writeDraftText(
 		'GET',
 		`/blocks/${pageId}/children?page_size=100`
 	);
+
+	const messages: any[] = [];
+
 	for (const b of results) {
 		if (b.type === 'child_page' || b.type === 'child_database') continue;
+		if (b.type === 'callout') {
+			messages.push({
+				object: 'block',
+				type: 'callout',
+				callout: {
+					icon: b.callout?.icon ?? {type: 'emoji', emoji: '🌌'},
+					rich_text: rewritableRichText(b.callout?.rich_text)
+				}
+			});
+		}
 		await notion(token, 'DELETE', `/blocks/${b.id}`);
 	}
 
-	const blocks = textToParagraphBlocks(text);
+	const blocks = [...textToParagraphBlocks(text), ...messages];
 	// PATCH children은 요청당 최대 100 블록.
 	for (let i = 0; i < blocks.length; i += ITEMS_PER_BLOCK) {
 		await notion(token, 'PATCH', `/blocks/${pageId}/children`, {
@@ -319,6 +349,11 @@ export async function appendMessage(
 	message: string
 ) {
 	const stamp = new Date().toISOString().slice(0, 10);
+	const body = `[${stamp}] 다른 우주의 내가 보낸 메시지 — ${message}`;
+	// rich_text item당 2000자 제한 — 길면 여러 item으로 쪼갠다(한 callout 안에서 이어짐).
+	const chunks: string[] = [];
+	for (let i = 0; i < body.length; i += CHUNK) chunks.push(body.slice(i, i + CHUNK));
+
 	await notion(token, 'PATCH', `/blocks/${pageId}/children`, {
 		children: [
 			{
@@ -326,12 +361,7 @@ export async function appendMessage(
 				type: 'callout',
 				callout: {
 					icon: {type: 'emoji', emoji: '🌌'},
-					rich_text: [
-						{
-							type: 'text',
-							text: {content: `[${stamp}] 다른 우주의 내가 보낸 메시지 — ${message}`}
-						}
-					]
+					rich_text: chunks.map(content => ({type: 'text', text: {content}}))
 				}
 			}
 		]
