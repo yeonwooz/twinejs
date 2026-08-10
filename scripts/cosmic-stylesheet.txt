@@ -48,3 +48,35 @@ tw-story input, tw-story textarea {
 	border:1px solid rgba(143,208,255,.4); border-radius:8px;
 	padding:.6em .8em; font-family:inherit; width:100%;
 }
+/* 되돌리기·다시하기. Harlowe는 이 아이콘들을 본문 왼쪽 바깥(left:-5em)에 절대배치하고
+   불투명도 .2, 66px로 둔다. 위에서 tw-story의 좌우 패딩을 20%에서 줄였기 때문에 그
+   자리가 tw-story의 overflow:hidden에 잘려 데스크톱에서 아예 보이지 않는다. 본문 흐름
+   위로 끌어와 링크와 같은 톤을 입힌다. 주입 순서에 의존하지 않도록 !important로 덮는다.
+   갈 곳이 없을 때는 Harlowe가 인라인 visibility:hidden을 걸어 알아서 감추므로,
+   visibility는 절대 건드리지 않는다 — 되돌아갈 데가 있을 때만 나타나야 한다. */
+tw-sidebar {
+	position:static !important; width:auto !important;
+	flex-direction:row !important; justify-content:flex-start !important;
+	gap:1.4em; margin:0 0 2rem !important; text-align:left;
+}
+/* em 기준으로 크기를 잡아 본문 글자 크기에 따라 함께 커지고, 손가락으로 누를 만한
+   높이가 나오도록 패딩을 준다. 앱 재생 화면의 "← 목록으로" 버튼과 같은 톤. */
+tw-sidebar tw-icon[alt] {
+	opacity:1 !important; margin:0 !important;
+	font-size:.7em !important; line-height:1;
+	display:inline-flex; align-items:center; gap:.5em;
+	padding:.6em .9em;
+	border:1px solid rgba(143,208,255,.45); border-radius:8px;
+	background:rgba(10,14,30,.75);
+	color:#8fd0ff; transition:all .2s;
+}
+tw-sidebar tw-icon[alt]:hover {
+	color:#fff; border-color:#8fd0ff; background:rgba(30,44,90,.8);
+	text-shadow:0 0 12px #8fd0ff;
+}
+/* Harlowe의 tw-icon[data-label]::after 는 absolute로 띄우는 규칙이라 눌러둔다. */
+tw-sidebar tw-icon[alt]::after {
+	position:static !important; font:inherit; font-size:.85em; white-space:nowrap;
+}
+tw-sidebar tw-icon[alt="Undo"]::after { content:"방금 전 장면"; }
+tw-sidebar tw-icon[alt="Redo"]::after { content:"다시 앞으로"; }
