@@ -3,6 +3,7 @@ import {useHistory, useLocation} from 'react-router-dom';
 import {importStories, useStoriesContext} from '../../store/stories';
 import {useStoriesRepair} from '../../store/use-stories-repair';
 import {storyFromTwee} from '../../util/twee';
+import {setRetroLinkForStory} from '../../util/retro-link';
 import './retro-route.css';
 
 type Step =
@@ -314,6 +315,18 @@ export const RetroRoute: React.FC = () => {
 		? stories.find(s => s.name === storyName)
 		: undefined;
 
+	// 만들어진 스토리를 원본 회고 페이지에 묶어둔다 — 재생 중 "그때의 나에게" 구절에
+	// 쓴 메시지를 이 페이지에 저장하기 위해(story-play-route).
+	const createdId = created?.id;
+	const retroId = retro?.id;
+	const retroTitle = retro?.title;
+
+	React.useEffect(() => {
+		if (createdId && retroId) {
+			setRetroLinkForStory(createdId, {pageId: retroId, title: retroTitle ?? ''});
+		}
+	}, [createdId, retroId, retroTitle]);
+
 	function refine() {
 		if (!retro || !twee) return;
 		const fb = feedback.trim();
@@ -577,7 +590,10 @@ export const RetroRoute: React.FC = () => {
 						</div>
 
 						<div className="retro-message">
-							<label>그때의 나에게 한마디 (저장하면 Notion 그 회고 페이지에 남아요)</label>
+							<label>
+								그때의 나에게 한마디 — 여기서 바로 남기기 (재생 중 마지막 구절에 쓴
+								메시지도 같은 회고 페이지에 저장돼요)
+							</label>
 							<textarea
 								rows={3}
 								value={message}

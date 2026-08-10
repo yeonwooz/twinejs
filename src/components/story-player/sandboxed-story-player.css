@@ -25,3 +25,20 @@
 .sandboxed-story-back:hover {
 	border-color: #8fd0ff;
 }
+
+.sandboxed-story-notice {
+	position: fixed;
+	top: 0.8rem;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 10;
+	max-width: min(32rem, calc(100vw - 12rem));
+	padding: 0.4em 0.9em;
+	border: 1px solid rgba(143, 208, 255, 0.5);
+	border-radius: 8px;
+	background: rgba(10, 14, 30, 0.85);
+	color: #eaf0ff;
+	font-size: 0.9em;
+	text-align: center;
+	backdrop-filter: blur(4px);
+}

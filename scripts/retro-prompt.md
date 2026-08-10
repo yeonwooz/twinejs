@@ -14,6 +14,9 @@
 - 메시지 구절: 선택 후, 독자가 "그때의 나에게 보내는 한마디"를 직접 쓰게 한다. Harlowe 매크로 사용:
   `(input-box: bind $message, "=XXXXXXXXXXXXXXXXXX=", 5)`
   그 아래 `[[그때의 나에게 전송->전송 완료]]` 링크.
+  **반드시 여러 줄 `(input-box:)`를 쓴다** — 앱이 이 입력칸(<textarea>로 렌더된다)에 쓴 글을
+  집어 Notion 회고 페이지에 저장한다. 한 줄짜리 `(input:)`으로 바꾸면 메시지가 유실된다.
+  (src/components/story-player/story-message-bridge.ts)
 - "전송 완료" 구절: 메시지가 시공 너머 그때의 나에게 도착하는 과정을 `(after: N s)`로 단계별로 떠올린다.
   중간에 `$message`를 되비추고(예: `(text-style:"fade-in-out")[「$message」]`), 끝에 처음 구절로 돌아가는 링크를 둔다. 예:
   ```
