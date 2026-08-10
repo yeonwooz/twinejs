@@ -26,6 +26,10 @@ describe('<StoryTestRoute>', () => {
 		);
 	}
 
+	function storyFrame() {
+		return document.querySelector('iframe.sandboxed-story-player');
+	}
+
 	it('replaces the DOM with a testing version of the story in :storyId', async () => {
 		const publishStory = jest.fn(
 			jest.fn(() => Promise.resolve('mock-published-story'))
@@ -34,7 +38,7 @@ describe('<StoryTestRoute>', () => {
 		usePublishingMock.mockReturnValue({publishStory});
 		renderComponent('/stories/123/test');
 		await waitFor(() =>
-			expect(document.body.textContent).toBe('mock-published-story')
+			expect(storyFrame()?.getAttribute('srcdoc')).toBe('mock-published-story')
 		);
 		expect(publishStory.mock.calls).toEqual([
 			['123', {formatOptions: 'debug', startId: undefined}]
@@ -49,7 +53,7 @@ describe('<StoryTestRoute>', () => {
 		usePublishingMock.mockReturnValue({publishStory});
 		renderComponent('/stories/123/test/456');
 		await waitFor(() =>
-			expect(document.body.textContent).toBe('mock-published-story')
+			expect(storyFrame()?.getAttribute('srcdoc')).toBe('mock-published-story')
 		);
 		expect(publishStory.mock.calls).toEqual([
 			['123', {formatOptions: 'debug', startId: '456'}]

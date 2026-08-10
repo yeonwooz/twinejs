@@ -23,6 +23,10 @@ describe('<StoryProofRoute>', () => {
 		);
 	}
 
+	function storyFrame() {
+		return document.querySelector('iframe.sandboxed-story-player');
+	}
+
 	it('replaces the DOM with a proofing version of the story in :storyId', async () => {
 		const proofStory = jest.fn(
 			jest.fn(() => Promise.resolve('mock-proofed-story'))
@@ -31,7 +35,7 @@ describe('<StoryProofRoute>', () => {
 		usePublishingMock.mockReturnValue({proofStory});
 		renderComponent('/stories/123/proof');
 		await waitFor(() =>
-			expect(document.body.textContent).toBe('mock-proofed-story')
+			expect(storyFrame()?.getAttribute('srcdoc')).toBe('mock-proofed-story')
 		);
 		expect(proofStory.mock.calls).toEqual([['123']]);
 	});
