@@ -97,6 +97,8 @@ export const RetroRoute: React.FC = () => {
 	const [model, setModel] = React.useState<string>('');
 	const [apiKeyInput, setApiKeyInput] = React.useState('');
 	const [keyError, setKeyError] = React.useState<string>();
+	// 키 보관 시간은 서버 상수(LLM_KEY_MAX_AGE)에서 받아온다 — 화면에 적어두면 어긋난다.
+	const [keyTtlHours, setKeyTtlHours] = React.useState<number>();
 	const [draft, setDraft] = React.useState('');
 	const [questions, setQuestions] = React.useState<string[]>([]);
 	const [answers, setAnswers] = React.useState<Record<number, string>>({});
@@ -148,9 +150,13 @@ export const RetroRoute: React.FC = () => {
 			provider: string | null;
 			models?: ModelOption[];
 			defaultModel?: string | null;
+			keyExpiresInHours?: number;
 		}) => {
 			setProvider(info.provider);
 			setModels(info.models ?? []);
+			if (typeof info.keyExpiresInHours === 'number') {
+				setKeyTtlHours(info.keyExpiresInHours);
+			}
 			setModel(prev =>
 				prev && (info.models ?? []).some(m => m.id === prev)
 					? prev
@@ -514,6 +520,13 @@ export const RetroRoute: React.FC = () => {
 							키</strong>를 발급해 쓰시길 권해요. 만에 하나 키가 노출돼도 피해가 작게 끝나요.
 							다 쓰면 프로바이더 콘솔에서 키를 폐기(revoke)하세요.
 						</p>
+						{keyTtlHours !== undefined && (
+							<p className="retro-muted">
+								입력한 키는 <strong>{keyTtlHours}시간</strong> 뒤 자동으로 잊혀요. 그
+								뒤엔 다시 입력하면 되고, 언제든 아래 &lsquo;AI 키 삭제&rsquo;로 먼저
+								지울 수도 있어요.
+							</p>
+						)}
 						<div className="retro-new">
 							<input
 								type="password"

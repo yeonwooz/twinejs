@@ -1,5 +1,10 @@
 import type {VercelRequest, VercelResponse} from '@vercel/node';
-import {getSession, Session, writeSession} from './_lib/session';
+import {
+	getSession,
+	LLM_KEY_MAX_AGE,
+	Session,
+	writeSession
+} from './_lib/session';
 import {resolveLlmKey} from './_lib/llm';
 import {
 	DEFAULT_MODEL,
@@ -9,6 +14,10 @@ import {
 	PRICES,
 	providerFromKey
 } from './_lib/models';
+
+// 키 수명은 비밀이 아니라 사용자에게 알려줄 정보다 — UI가 상수와 어긋나지 않도록
+// 모든 응답에 함께 실어 보낸다.
+const KEY_TTL_HOURS = Math.round(LLM_KEY_MAX_AGE / 3600);
 
 // LLM 키 설정(POST {key}) + 현재 키 기준 프로바이더·모델 목록 조회(GET).
 // 키는 봉인 세션 쿠키에만 저장하고, 값은 응답에 절대 포함하지 않는다.
@@ -29,11 +38,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			return;
 		}
 		const provider = providerFromKey(key);
-		writeSession(res, {...s, llmKey: key, llmProvider: provider});
+		// 키 수명은 입력 시점부터 고정 — 이후 세션이 갱신돼도 따라 늘어나지 않는다.
+		writeSession(res, {
+			...s,
+			llmKey: key,
+			llmProvider: provider,
+			llmExp: Math.floor(Date.now() / 1000) + LLM_KEY_MAX_AGE
+		});
 		res.status(200).json({
 			provider,
 			models: MODELS[provider],
-			defaultModel: DEFAULT_MODEL[provider]
+			defaultModel: DEFAULT_MODEL[provider],
+			keyExpiresInHours: KEY_TTL_HOURS
 		});
 		return;
 	}
@@ -44,8 +60,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		const next: Session = {...s};
 		delete next.llmKey;
 		delete next.llmProvider;
+		delete next.llmExp;
 		writeSession(res, next);
-		res.status(200).json({provider: null, models: [], defaultModel: null});
+		res.status(200).json({
+			provider: null,
+			models: [],
+			defaultModel: null,
+			keyExpiresInHours: KEY_TTL_HOURS
+		});
 		return;
 	}
 
@@ -54,7 +76,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	try {
 		const key = await resolveLlmKey(s);
 		if (!key) {
-			res.status(200).json({provider: null, models: [], defaultModel: null});
+			res.status(200).json({
+				provider: null,
+				models: [],
+				defaultModel: null,
+				keyExpiresInHours: KEY_TTL_HOURS
+			});
 			return;
 		}
 		let models: ModelOption[] = MODELS[key.provider];
@@ -77,7 +104,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 				}
 			}
 		}
-		res.status(200).json({provider: key.provider, models, defaultModel});
+		res.status(200).json({
+			provider: key.provider,
+			models,
+			defaultModel,
+			keyExpiresInHours: KEY_TTL_HOURS
+		});
 	} catch (error) {
 		res.status(502).json({error: (error as Error).message});
 	}
