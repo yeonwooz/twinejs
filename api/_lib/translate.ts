@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
-import {Provider} from './models';
+import {EMPTY_USAGE, Provider, TokenUsage} from './models';
 
 // adaptive thinking + effort를 지원하는 Anthropic 모델 판별. 모든 Opus(4.7+, 우리
 // 드롭다운/기본값엔 그 이상만 노출)와 Sonnet 5·Fable 5가 해당. Haiku 4.5 등은 미지원이라
@@ -100,10 +100,17 @@ export interface TranslateInput {
 	feedback?: string;
 }
 
-export interface TranslateResult {
+// 모델이 구조화 출력으로 돌려주는 JSON(OUTPUT_SCHEMA와 같은 모양).
+interface ModelOutput {
 	questions: string[];
 	twee: string;
 	draftUpdate: string;
+}
+
+// 모델 출력 + 그 호출이 쓴 토큰. usage는 모델이 만드는 게 아니라 응답 메타에서
+// 우리가 붙인다 — 비용 표시와 캐싱 효과 판단에 쓸 유일한 실측값이다.
+export interface TranslateResult extends ModelOutput {
+	usage: TokenUsage;
 }
 
 function buildUser(input: TranslateInput): string {
@@ -153,7 +160,16 @@ async function translateAnthropic(
 	if (!text) {
 		throw new Error('모델이 빈 응답을 반환했어요(정책 거부 등). 다른 모델을 시도해 주세요.');
 	}
-	return JSON.parse(text) as TranslateResult;
+	const u = response.usage;
+	return {
+		...(JSON.parse(text) as ModelOutput),
+		usage: {
+			inputTokens: u?.input_tokens ?? 0,
+			outputTokens: u?.output_tokens ?? 0,
+			cacheReadTokens: u?.cache_read_input_tokens ?? 0,
+			cacheWriteTokens: u?.cache_creation_input_tokens ?? 0
+		}
+	};
 }
 
 async function translateOpenAI(
@@ -177,7 +193,17 @@ async function translateOpenAI(
 	if (!text) {
 		throw new Error('모델이 빈 응답을 반환했어요. 다른 모델을 시도해 주세요.');
 	}
-	return JSON.parse(text) as TranslateResult;
+	// OpenAI의 prompt_tokens는 캐시분을 포함한 총 입력이라, 캐시 항목을 따로 채우면
+	// 이중 계산이 된다. 입력에 합쳐 담고 캐시는 0으로 둔다(OpenAI는 단가표에도 없어
+	// 비용이 null로 나가므로 표시에는 영향이 없다).
+	return {
+		...(JSON.parse(text) as ModelOutput),
+		usage: {
+			...EMPTY_USAGE,
+			inputTokens: response.usage?.prompt_tokens ?? 0,
+			outputTokens: response.usage?.completion_tokens ?? 0
+		}
+	};
 }
 
 export async function translate(input: TranslateInput): Promise<TranslateResult> {

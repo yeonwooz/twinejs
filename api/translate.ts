@@ -1,7 +1,7 @@
 import type {VercelRequest, VercelResponse} from '@vercel/node';
 import {getSession} from './_lib/session';
 import {resolveLlmKey} from './_lib/llm';
-import {resolveModel} from './_lib/models';
+import {addUsage, costUsd, resolveModel} from './_lib/models';
 import {
 	repairStartPassage,
 	translate,
@@ -39,10 +39,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			return;
 		}
 
+		const model = resolveModel(key.provider, body.model);
 		const common = {
 			apiKey: key.apiKey,
 			provider: key.provider,
-			model: resolveModel(key.provider, body.model),
+			model,
 			draftText: body.draft,
 			weekLabel: body.weekLabel ?? '',
 			qa: body.qa
@@ -53,12 +54,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			feedback: body.feedback
 		});
 
+		// 이 요청이 쓴 토큰. 아래 자동 보정으로 한 번 더 호출될 수 있어 합산해서 내보낸다.
+		// model도 함께 내보내는데, resolveModel이 클라가 고른 값을 되돌릴 수 있고
+		// Anthropic 기본값은 런타임에 발견한 최신 Opus일 수 있어서다.
+		let usage = result.usage;
+		const meta = () => ({model, usage, costUsd: costUsd(model, usage)});
+
 		// 빈 조건 질문이 있으면 그대로 반환(클라가 물어보고 재요청).
 		if (result.questions?.length) {
 			res.status(200).json({
 				questions: result.questions,
 				twee: result.twee,
-				draftUpdate: result.draftUpdate
+				draftUpdate: result.draftUpdate,
+				...meta()
 			});
 			return;
 		}
@@ -78,6 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 					existingTwee: result.twee,
 					feedback: `다음 문제를 고쳐라: ${problems.join('; ')}`
 				});
+				usage = addUsage(usage, result.usage);
 				problems = validateTwee(result.twee);
 			}
 		}
@@ -86,7 +95,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			questions: [],
 			twee: withCosmicUI(result.twee),
 			draftUpdate: result.draftUpdate,
-			warnings: problems
+			warnings: problems,
+			...meta()
 		});
 	} catch (error) {
 		res.status(502).json({error: (error as Error).message});

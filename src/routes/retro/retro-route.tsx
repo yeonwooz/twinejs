@@ -29,6 +29,26 @@ interface ModelOption {
 	hint: string;
 }
 
+// /api/translate가 응답에 실어 보내는 실측 사용량(api/_lib/models.ts의 TokenUsage).
+// 서버 코드를 클라에서 import할 수 없어 경계에서 모양만 다시 적는다.
+interface Usage {
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+}
+
+// 회고 한 건은 번역을 여러 번 호출하므로(질문 라운드·검증 보정·보완 재번역)
+// 호출별이 아니라 누적을 보여준다 — 사용자가 실제로 내는 금액이 그것이다.
+interface Spend {
+	calls: number;
+	model: string;
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	usd: number | null; // 단가를 모르는 모델(OpenAI 등)은 null
+}
+
 async function api(path: string, opts?: RequestInit) {
 	const res = await fetch(path, {credentials: 'same-origin', ...opts});
 	if (!res.ok) {
@@ -52,6 +72,12 @@ const sendJson = (method: string) => (path: string, data: unknown) =>
 	});
 const postJson = sendJson('POST');
 const putJson = sendJson('PUT');
+const del = (path: string) => api(path, {method: 'DELETE'});
+
+// 토큰 수는 자릿수만 보이면 되므로 1000 단위로 줄여 쓴다(28,540 → 28.5K).
+function fmtTokens(n: number): string {
+	return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
+}
 
 export const RetroRoute: React.FC = () => {
 	const history = useHistory();
@@ -81,6 +107,23 @@ export const RetroRoute: React.FC = () => {
 	const [message, setMessage] = React.useState('');
 	const [msgSaved, setMsgSaved] = React.useState(false);
 	const [msgError, setMsgError] = React.useState<string>();
+	const [spend, setSpend] = React.useState<Spend>();
+
+	// 번역 응답의 usage를 누적한다. 단가를 모르는 모델이 한 번이라도 섞이면
+	// 합계 금액은 신뢰할 수 없으므로 null로 떨어뜨린다(토큰 수는 계속 보여준다).
+	const addSpend = React.useCallback(
+		(model: string, usage: Usage, usd: number | null) =>
+			setSpend(prev => ({
+				calls: (prev?.calls ?? 0) + 1,
+				model,
+				inputTokens: (prev?.inputTokens ?? 0) + usage.inputTokens,
+				outputTokens: (prev?.outputTokens ?? 0) + usage.outputTokens,
+				cacheReadTokens: (prev?.cacheReadTokens ?? 0) + usage.cacheReadTokens,
+				usd:
+					usd === null || (prev && prev.usd === null) ? null : (prev?.usd ?? 0) + usd
+			})),
+		[]
+	);
 
 	const fail = React.useCallback((e: unknown) => {
 		setError(e instanceof Error ? e.message : String(e));
@@ -187,6 +230,50 @@ export const RetroRoute: React.FC = () => {
 		}
 	}
 
+	// 사용자가 맡긴 AI 키를 지운다(Notion 연결은 유지). 키를 잘못 넣었거나 쓰고 나서
+	// 회수하고 싶을 때 필요한 최소 수단 — 서버에 DELETE /api/llm이 이미 있는데
+	// 화면에 부르는 곳이 없었다.
+	async function deleteKey() {
+		if (
+			!window.confirm(
+				'저장된 AI API 키를 지울까요? Notion 연결은 그대로 유지돼요.'
+			)
+		) {
+			return;
+		}
+		try {
+			applyLlmInfo(await del('/api/llm'));
+			setApiKeyInput('');
+			setKeyError(undefined);
+			setStep('apikey');
+		} catch (e) {
+			fail(e);
+		}
+	}
+
+	// 봉인 쿠키를 통째로 지운다 — Notion 토큰과 AI 키가 한 쿠키에 있으므로 둘 다 사라진다.
+	async function disconnect() {
+		if (
+			!window.confirm(
+				'Notion 연결을 해제할까요? 함께 저장된 AI API 키도 지워져요.'
+			)
+		) {
+			return;
+		}
+		try {
+			await del('/api/session');
+			applyLlmInfo({provider: null, models: [], defaultModel: null});
+			setApiKeyInput('');
+			setPages([]);
+			setRetros([]);
+			setRetro(undefined);
+			setSpend(undefined);
+			setStep('connect');
+		} catch (e) {
+			fail(e);
+		}
+	}
+
 	async function runTranslate(
 		r: NamedPage,
 		draftText: string,
@@ -204,6 +291,9 @@ export const RetroRoute: React.FC = () => {
 				feedback: fb,
 				model: model || undefined
 			});
+			if (res.usage) {
+				addSpend(res.model, res.usage, res.costUsd ?? null);
+			}
 			if (res.questions?.length) {
 				setQuestions(res.questions);
 				setAnswers({});
@@ -363,6 +453,18 @@ export const RetroRoute: React.FC = () => {
 						🏠 홈으로
 					</button>
 				</div>
+
+				{spend && (
+					<p className="retro-spend">
+						이번 회고 — 번역 {spend.calls}회 · 입력 {fmtTokens(spend.inputTokens)} /
+						출력 {fmtTokens(spend.outputTokens)} 토큰
+						{spend.cacheReadTokens > 0 &&
+							` · 캐시 재사용 ${fmtTokens(spend.cacheReadTokens)}`}
+						{spend.usd === null
+							? ' · 이 모델은 단가가 등록돼 있지 않아 금액을 계산하지 못했어요'
+							: ` · 약 $${spend.usd.toFixed(3)}`}
+					</p>
+				)}
 
 				{step === 'loading' && <p className="retro-muted">불러오는 중…</p>}
 
@@ -659,6 +761,20 @@ export const RetroRoute: React.FC = () => {
 							다시 시도
 						</button>
 					</>
+				)}
+
+				{/* 맡긴 자격증명을 사용자가 직접 회수할 수단. 연결 전(connect)에는 지울 게 없다. */}
+				{step !== 'connect' && step !== 'loading' && (
+					<div className="retro-account">
+						{provider && (
+							<button className="retro-link" onClick={deleteKey}>
+								AI 키 삭제
+							</button>
+						)}
+						<button className="retro-link" onClick={disconnect}>
+							Notion 연결 해제
+						</button>
+					</div>
 				)}
 			</div>
 		</div>

@@ -10,21 +10,91 @@ export interface ModelOption {
 	hint: string;
 }
 
+// 1M 토큰당 USD(공식 목록가). 모델 선택 힌트와 사용량 비용 계산이 같은 값을 쓰도록
+// 여기 한 곳에 둔다 — 단가가 바뀌면 이 표만 고친다.
+//
+// OpenAI 단가는 일부러 넣지 않는다. 확인된 출처 없이 적어두면 틀린 값이 사용자에게
+// 비용으로 표시되기 때문 — 표에 없는 모델은 비용이 null로 나가고 토큰 수만 보인다.
+export interface ModelPrice {
+	input: number;
+	output: number;
+}
+
+export const PRICES: Record<string, ModelPrice> = {
+	'claude-haiku-4-5': {input: 1, output: 5},
+	'claude-sonnet-4-6': {input: 3, output: 15},
+	'claude-sonnet-5': {input: 3, output: 15},
+	'claude-opus-4-6': {input: 5, output: 25},
+	'claude-opus-4-7': {input: 5, output: 25},
+	'claude-opus-4-8': {input: 5, output: 25},
+	'claude-opus-5': {input: 5, output: 25},
+	'claude-fable-5': {input: 10, output: 50}
+};
+
+function option(id: string, label: string, note: string): ModelOption {
+	const p = PRICES[id];
+	return {id, label, hint: p ? `${note} · $${p.input}/$${p.output}` : note};
+}
+
 // 저렴 → 비쌈 순. 모두 구조화 출력(json schema)을 지원하는 모델만 넣는다.
 export const MODELS: Record<Provider, ModelOption[]> = {
 	anthropic: [
-		{id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', hint: '가장 저렴·빠름 · $1/$5'},
-		{id: 'claude-sonnet-5', label: 'Claude Sonnet 5', hint: '균형 · $3/$15'},
-		{id: 'claude-opus-4-8', label: 'Claude Opus 4.8', hint: '고품질(기본) · $5/$25'},
-		{id: 'claude-fable-5', label: 'Claude Fable 5', hint: '최고 성능 · $10/$50'}
+		option('claude-haiku-4-5', 'Claude Haiku 4.5', '가장 저렴·빠름'),
+		option('claude-sonnet-5', 'Claude Sonnet 5', '균형'),
+		option('claude-opus-4-8', 'Claude Opus 4.8', '고품질(기본)'),
+		option('claude-fable-5', 'Claude Fable 5', '최고 성능')
 	],
 	openai: [
-		{id: 'gpt-4o-mini', label: 'GPT-4o mini', hint: '가장 저렴·빠름'},
-		{id: 'gpt-5-mini', label: 'GPT-5 mini', hint: '저렴'},
-		{id: 'gpt-4o', label: 'GPT-4o', hint: '균형'},
-		{id: 'gpt-5', label: 'GPT-5', hint: '고품질'}
+		option('gpt-4o-mini', 'GPT-4o mini', '가장 저렴·빠름'),
+		option('gpt-5-mini', 'GPT-5 mini', '저렴'),
+		option('gpt-4o', 'GPT-4o', '균형'),
+		option('gpt-5', 'GPT-5', '고품질')
 	]
 };
+
+// --- 사용량·비용 -----------------------------------------------------------
+
+// 번역 요청이 쓴 토큰. Anthropic의 input_tokens는 캐시분을 제외한 나머지이므로
+// (총 입력 = input + cache_read + cache_write) 네 값을 겹치지 않게 더할 수 있다.
+export interface TokenUsage {
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+}
+
+export const EMPTY_USAGE: TokenUsage = {
+	inputTokens: 0,
+	outputTokens: 0,
+	cacheReadTokens: 0,
+	cacheWriteTokens: 0
+};
+
+// 한 회고는 번역을 여러 번 호출한다(질문 라운드·검증 보정·보완 재번역). 합산용.
+export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+	return {
+		inputTokens: a.inputTokens + b.inputTokens,
+		outputTokens: a.outputTokens + b.outputTokens,
+		cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
+		cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens
+	};
+}
+
+// 단가를 모르는 모델(OpenAI 등)은 null. 캐시 읽기는 입력 단가의 0.1배, 쓰기는
+// 1.25배(기본 5분 TTL) — 지금은 캐싱을 켜지 않아 두 값이 0이지만, 켰을 때도
+// 계산이 맞도록 넣어둔다.
+export function costUsd(model: string, u: TokenUsage): number | null {
+	const p = PRICES[model];
+	if (!p) return null;
+	const perMillion = 1_000_000;
+	return (
+		(u.inputTokens * p.input +
+			u.cacheWriteTokens * p.input * 1.25 +
+			u.cacheReadTokens * p.input * 0.1 +
+			u.outputTokens * p.output) /
+		perMillion
+	);
+}
 
 export const DEFAULT_MODEL: Record<Provider, string> = {
 	anthropic: 'claude-opus-4-8',

@@ -6,6 +6,7 @@ import {
 	latestOpusId,
 	MODELS,
 	ModelOption,
+	PRICES,
 	providerFromKey
 } from './_lib/models';
 
@@ -63,7 +64,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			if (latest) {
 				defaultModel = latest;
 				if (!models.some(m => m.id === latest)) {
-					models = [{id: latest, label: latest, hint: '최신 Opus'}, ...models];
+					// 카탈로그보다 새 모델이라 단가표에 없을 수 있다 — 있으면 붙이고 없으면 생략.
+					const p = PRICES[latest];
+					models = [
+						{
+							id: latest,
+							label: latest,
+							hint: p ? `최신 Opus · $${p.input}/$${p.output}` : '최신 Opus'
+						},
+						...models
+					];
 				}
 			}
 		}
