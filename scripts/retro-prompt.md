@@ -40,10 +40,10 @@
 
 ```
 :: 전송 완료
-(after: 0.2s)[신호가 시공의 얇은 막을 통과한다…]
-(after: 2s)[그때의 네가 문득 고개를 든다. 네 문장이 허공에 떠오른다:]
+(after: 0.2s)[네트워크 연결중…]
+(after: 2s)[메시지 전송 완료:]
 (after: 3.2s)[(text-style:"fade-in-out")[「$message」]]
-(after: 5s)[(text-colour:#8fd0ff)[수신 완료.] 다음 좌표에서 또 만나자.
+(after: 5s)[(text-colour:#8fd0ff)[수신 완료]
 [[처음으로 돌아가 다시 여행한다->출발]]]
 ```
 
