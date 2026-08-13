@@ -2,7 +2,10 @@
 
 Twine(인터랙티브 픽션 저작 도구) 저장소. dev 서버에 Notion sync가 붙어 있어
 스토리가 twee 소스로 Notion stories DB에 미러링된다(`vite-plugin-notion-sync.ts`,
-`src/store/persistence/notion-sync/`). 로컬 앱은 로드 시 stories DB만 pull 한다.
+`src/store/persistence/notion-sync/`). 로컬 앱은 stories DB만 pull 한다 — 로드 시
+한 번, 그리고 앱이 켜져 있는 동안 5초마다(`src/store/use-notion-sync-pull.ts`).
+폴링은 `GET /__notion-sync/stories?meta=1`로 타임스탬프만 받아보고, 지문이 바뀌었을
+때만 twee 본문까지 받는다. 노션에서 직접 고친 내용이 새로고침 없이 반영된다.
 
 ## 실행 진입점
 

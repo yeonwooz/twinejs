@@ -139,15 +139,45 @@ export interface RemoteStory {
 	lastEdited: string | null;
 }
 
+export type RemoteStoryMeta = Omit<RemoteStory, 'twee'>;
+
+// DB 쿼리 1회. Story ID 없는 페이지는 우리 것이 아니라 여기서 걸러지고,
+// listStoryMeta/listStories가 같은 기준으로 걸러야 목록이 서로 어긋나지 않는다.
+async function queryStoryPages(token: string, dbId: string) {
+	const result = await notion(token, 'POST', `/databases/${dbId}/query`, {});
+	const pages: {page: any; storyId: string}[] = [];
+	for (const page of result.results) {
+		const storyId = page.properties['Story ID']?.rich_text?.[0]?.plain_text;
+		if (storyId) pages.push({page, storyId});
+	}
+	return pages;
+}
+
+function pageMeta(page: any, storyId: string): RemoteStoryMeta {
+	return {
+		storyId,
+		lastSynced: page.properties['Last Synced']?.date?.start ?? null,
+		lastEdited: page.last_edited_time ?? null
+	};
+}
+
+// 클라가 주기적으로 찔러보는 값 — twee 본문을 읽지 않으므로 스토리 수와 무관하게
+// HTTP 요청 1건이다.
+export async function listStoryMeta(
+	token: string,
+	dbId: string
+): Promise<RemoteStoryMeta[]> {
+	return (await queryStoryPages(token, dbId)).map(({page, storyId}) =>
+		pageMeta(page, storyId)
+	);
+}
+
 export async function listStories(
 	token: string,
 	dbId: string
 ): Promise<RemoteStory[]> {
-	const result = await notion(token, 'POST', `/databases/${dbId}/query`, {});
 	const stories: RemoteStory[] = [];
-	for (const page of result.results) {
-		const storyId = page.properties['Story ID']?.rich_text?.[0]?.plain_text;
-		if (!storyId) continue;
+	for (const {page, storyId} of await queryStoryPages(token, dbId)) {
 		const children = await notion(
 			token,
 			'GET',
@@ -155,12 +185,7 @@ export async function listStories(
 		);
 		const twee = tweeFromBlocks(children.results);
 		if (!twee) continue;
-		stories.push({
-			storyId,
-			twee,
-			lastSynced: page.properties['Last Synced']?.date?.start ?? null,
-			lastEdited: page.last_edited_time ?? null
-		});
+		stories.push({...pageMeta(page, storyId), twee});
 	}
 	return stories;
 }

@@ -1,10 +1,10 @@
 import * as React from 'react';
-import {useParams} from 'react-router-dom';
+import {Redirect, useParams} from 'react-router-dom';
 import {MainContent} from '../../components/container/main-content';
 import {DocumentTitle} from '../../components/document-title/document-title';
 import {DialogsContextProvider} from '../../dialogs';
 import { usePrefsContext } from '../../store/prefs';
-import {storyWithId} from '../../store/stories';
+import {Story} from '../../store/stories';
 import {
 	UndoableStoriesContextProvider,
 	useUndoableStoriesContext
@@ -21,9 +21,19 @@ import './story-edit-route.css';
 
 export const InnerStoryEditRoute: React.FC = () => {
 	const {storyId} = useParams<{storyId: string}>();
-	const {prefs} = usePrefsContext();
 	const {stories} = useUndoableStoriesContext();
-	const story = storyWithId(stories, storyId);
+	const story = stories.find(({id}) => id === storyId);
+
+	// The story can go away while it's on screen--deleted in the store that
+	// persistence syncs with, then pulled in--and it can be missing from the
+	// start if the user followed a stale link. Either way, reading it would
+	// throw, so bail out to the story list instead.
+
+	return story ? <StoryEditor story={story} /> : <Redirect to="/" />;
+};
+
+const StoryEditor: React.FC<{story: Story}> = ({story}) => {
+	const {prefs} = usePrefsContext();
 	const [fuzzyFinderOpen, setFuzzyFinderOpen] = React.useState(false);
 	const mainContent = React.useRef<HTMLDivElement>(null);
 	const {getCenter, setCenter} = useViewCenter(story, mainContent);

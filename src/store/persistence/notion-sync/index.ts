@@ -154,11 +154,23 @@ export function notionSaveMiddleware(
 	}
 }
 
-export interface RemoteStory {
+export interface RemoteStoryMeta {
 	lastEdited: string | null;
 	lastSynced: string | null;
 	storyId: string;
+}
+
+export interface RemoteStory extends RemoteStoryMeta {
 	twee: string;
+}
+
+/**
+ * Story IDs with an unsent local edit (the 3 second debounce hasn't fired yet).
+ * The Notion copy of these can't be authoritative -- the newest text is sitting
+ * in this browser -- so a pull must leave them alone.
+ */
+function locallyPendingStoryIds() {
+	return [...pendingSyncs.keys()];
 }
 
 /**
@@ -200,14 +212,22 @@ function remoteToStory(remote: RemoteStory): Story {
  * is newer than the local one. Content is compared after normalizing both
  * sides to twee, so the snapshot created by our own last push--whose
  * timestamp always trails the local edit slightly--never wins spuriously.
+ *
+ * Stories in `skipStoryIds` are left untouched regardless of timestamps; see
+ * locallyPendingStoryIds.
  */
 export function mergeRemoteStories(
 	localStories: StoriesState,
-	remoteStories: RemoteStory[]
+	remoteStories: RemoteStory[],
+	skipStoryIds: string[] = []
 ): Story[] {
 	const result = [...localStories];
 
 	for (const remote of remoteStories) {
+		if (skipStoryIds.includes(remote.storyId)) {
+			continue;
+		}
+
 		let incoming: Story;
 
 		try {
@@ -246,23 +266,209 @@ export function mergeRemoteStories(
  * mergeRemoteStories). If sync is disabled or the request fails, local
  * stories are returned untouched.
  */
+// Notion에서 지운 스토리를 로컬에서도 지우기 위한 장부.
+//
+// "원격 목록에 없으면 삭제"로 단순화할 수 없다 — 방금 로컬에서 만든 스토리는 아직
+// 푸시되지 않았을 뿐(3초 디바운스)인데 그걸 삭제로 오해하면 만들자마자 사라진다.
+// 그래서 "지난 로드에서 원격에 있는 걸 본" id를 적어두고, 그것이 사라진 경우만
+// 삭제로 판단한다.
+const SYNCED_IDS_KEY = 'twine-notion-synced-stories';
+
+function readSyncedIds(): string[] {
+	try {
+		const raw = window.localStorage.getItem(SYNCED_IDS_KEY);
+
+		return raw ? raw.split(',').filter(Boolean) : [];
+	} catch {
+		return [];
+	}
+}
+
+function writeSyncedIds(ids: string[]) {
+	try {
+		window.localStorage.setItem(SYNCED_IDS_KEY, ids.join(','));
+	} catch {
+		// 저장 못 해도 진행은 막지 않는다 — 다음 로드에서 삭제 판단만 보류된다.
+	}
+}
+
+/**
+ * Local stories that were present in Notion last time we looked but are gone
+ * now — i.e. deleted (or archived) on the Notion side.
+ *
+ * Pure so the irreversible half of this feature is testable: caller supplies
+ * the ids it recorded previously.
+ */
+export function remotelyDeletedStoryIds(
+	localStories: StoriesState,
+	remoteStories: RemoteStory[],
+	previouslySynced: string[]
+): string[] {
+	const remoteIds = new Set(remoteStories.map(r => r.storyId));
+	const localIds = new Set(localStories.map(s => s.id));
+
+	return previouslySynced.filter(id => !remoteIds.has(id) && localIds.has(id));
+}
+
+export interface MergeResult {
+	stories: Story[];
+	// 로컬에서도 지워야 하는 스토리 — 호출부가 localStorage에서 실제로 제거한다.
+	deletedIds: string[];
+}
+
 export async function mergeStoriesFromNotion(
 	localStories: StoriesState
-): Promise<Story[]> {
+): Promise<MergeResult> {
 	if (!(await isEnabled())) {
-		return localStories;
+		return {stories: localStories, deletedIds: []};
 	}
 
-	try {
-		const response = await fetch('/__notion-sync/stories');
+	const remote = await fetchRemote<RemoteStory>('/__notion-sync/stories');
 
-		if (!response.ok) {
-			return localStories;
+	return remote
+		? applyRemoteStories(localStories, remote)
+		: {stories: localStories, deletedIds: []};
+}
+
+async function fetchRemote<T>(url: string): Promise<T[] | undefined> {
+	try {
+		const response = await fetch(url);
+
+		return response.ok ? await response.json() : undefined;
+	} catch (error) {
+		console.warn(`Fetching ${url} failed`, error);
+		return undefined;
+	}
+}
+
+/**
+ * Merges a fetched remote listing into local stories and updates the
+ * synced-IDs ledger. Shared by the load-time merge and the live pull.
+ */
+function applyRemoteStories(
+	localStories: StoriesState,
+	remote: RemoteStory[]
+): MergeResult {
+	const merged = mergeRemoteStories(
+		localStories,
+		remote,
+		locallyPendingStoryIds()
+	);
+
+	// 원격 목록이 빈 채로 오는 건 "전부 지웠다"보다 설정 오류·API 이상일 가능성이
+	// 훨씬 높다. 삭제는 되돌릴 수 없으므로 그 경우엔 판단을 보류한다(장부도 그대로
+	// 둬서 다음 정상 응답에 다시 비교한다).
+	const synced = readSyncedIds();
+
+	if (remote.length === 0) {
+		if (synced.length > 0) {
+			console.warn(
+				'Notion returned no stories; skipping remote-deletion sync this time'
+			);
+		}
+		return {stories: merged, deletedIds: []};
+	}
+
+	const deletedIds = remotelyDeletedStoryIds(localStories, remote, synced);
+
+	writeSyncedIds(remote.map(r => r.storyId));
+
+	return {
+		stories: deletedIds.length
+			? merged.filter(s => !deletedIds.includes(s.id))
+			: merged,
+		deletedIds
+	};
+}
+
+/**
+ * A fingerprint of the remote listing. Two identical fingerprints mean no
+ * Notion page has been touched since we last looked, so there's nothing to
+ * fetch bodies for.
+ */
+export function remoteFingerprint(remote: RemoteStoryMeta[]) {
+	return remote
+		.map(({storyId, lastEdited, lastSynced}) =>
+			[storyId, lastEdited ?? '', lastSynced ?? ''].join(':')
+		)
+		.sort()
+		.join('|');
+}
+
+export interface PullResult extends MergeResult {
+	/** Did anything actually change? Callers shouldn't touch the store if not. */
+	changed: boolean;
+}
+
+let lastFingerprint: string | undefined;
+let pulling = false;
+
+/**
+ * Did this list of stories change identity-wise? mergeRemoteStories copies the
+ * local array and only swaps in new objects for stories it replaced, so
+ * reference equality is an exact "nothing happened" test.
+ */
+function sameStories(before: StoriesState, after: Story[]) {
+	return (
+		before.length === after.length &&
+		before.every((story, index) => story === after[index])
+	);
+}
+
+/**
+ * Checks Notion for changes made since the last look and merges them in. Meant
+ * to be called repeatedly while the app runs, so the expensive part -- reading
+ * every story's twee body -- only happens once a cheap timestamp-only listing
+ * shows something moved.
+ *
+ * Returns `changed: false` when there's nothing to apply, which is the common
+ * case: one HTTP request and no store update.
+ */
+export async function pullRemoteChanges(
+	localStories: StoriesState
+): Promise<PullResult> {
+	const untouched = {stories: localStories, deletedIds: [], changed: false};
+
+	if (pulling || !(await isEnabled())) {
+		return untouched;
+	}
+
+	pulling = true;
+
+	try {
+		const meta = await fetchRemote<RemoteStoryMeta>(
+			'/__notion-sync/stories?meta=1'
+		);
+
+		if (!meta) {
+			return untouched;
 		}
 
-		return mergeRemoteStories(localStories, await response.json());
-	} catch (error) {
-		console.warn('Merging stories from Notion failed', error);
-		return localStories;
+		const fingerprint = remoteFingerprint(meta);
+
+		if (fingerprint === lastFingerprint) {
+			return untouched;
+		}
+
+		const remote = await fetchRemote<RemoteStory>('/__notion-sync/stories');
+
+		if (!remote) {
+			return untouched;
+		}
+
+		// 게이트에 쓴 값을 그대로 저장한다. 본문 응답에서 다시 계산하면, twee가 빈
+		// 페이지처럼 두 목록이 갈리는 경우에 지문이 영구히 어긋나 매번 본문을 받게 된다.
+		lastFingerprint = fingerprint;
+
+		const result = applyRemoteStories(localStories, remote);
+
+		return {
+			...result,
+			changed:
+				result.deletedIds.length > 0 ||
+				!sameStories(localStories, result.stories)
+		};
+	} finally {
+		pulling = false;
 	}
 }

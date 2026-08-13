@@ -13,6 +13,15 @@ export interface PersistenceHooks {
 	};
 	stories: {
 		load: () => Promise<StoriesState>;
+		/**
+		 * Pulls changes made to the backing store since the last look, if the
+		 * backend has one that others can write to. Absent for backends where
+		 * this app is the only writer, e.g. Electron.
+		 */
+		pullRemote?: (current: StoriesState) => Promise<{
+			stories: StoriesState;
+			changed: boolean;
+		}>;
 		saveMiddleware: (
 			state: StoriesState,
 			action: StoriesAction,

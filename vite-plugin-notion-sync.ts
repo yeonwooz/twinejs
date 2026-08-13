@@ -96,6 +96,47 @@ function tweeFromBlocks(blocks: any[]) {
 		.join('');
 }
 
+// One database query, shared by listStoryMeta and listStories. Pages without a
+// Story ID aren't ours to sync, so they're dropped here and stay dropped --
+// which also keeps the two listings in agreement about what exists.
+async function queryStoryPages(config: NotionSyncConfig) {
+	const result = await notionRequest(
+		config,
+		'POST',
+		`/databases/${config.databaseId}/query`,
+		{}
+	);
+	const pages = [];
+
+	for (const page of result.results) {
+		const storyId = page.properties['Story ID']?.rich_text?.[0]?.plain_text;
+
+		if (storyId) {
+			pages.push({page, storyId});
+		}
+	}
+
+	return pages;
+}
+
+function pageMeta(page: any, storyId: string) {
+	return {
+		storyId,
+		lastSynced: page.properties['Last Synced']?.date?.start ?? null,
+		// Notion rounds this to the minute, so lastSynced (set on every push
+		// with full precision) is the better timestamp when both exist.
+		lastEdited: page.last_edited_time ?? null
+	};
+}
+
+// Timestamps only -- no per-page block fetch. This is what the client polls, so
+// it has to stay one HTTP request no matter how many stories exist.
+async function listStoryMeta(config: NotionSyncConfig) {
+	return (await queryStoryPages(config)).map(({page, storyId}) =>
+		pageMeta(page, storyId)
+	);
+}
+
 async function findPageByStoryId(config: NotionSyncConfig, storyId: string) {
 	const result = await notionRequest(
 		config,
@@ -170,21 +211,9 @@ async function archiveStory(config: NotionSyncConfig, storyId: string) {
 }
 
 async function listStories(config: NotionSyncConfig) {
-	const result = await notionRequest(
-		config,
-		'POST',
-		`/databases/${config.databaseId}/query`,
-		{}
-	);
 	const stories = [];
 
-	for (const page of result.results) {
-		const storyId = page.properties['Story ID']?.rich_text?.[0]?.plain_text;
-
-		if (!storyId) {
-			continue;
-		}
-
+	for (const {page, storyId} of await queryStoryPages(config)) {
 		const children = await notionRequest(
 			config,
 			'GET',
@@ -196,14 +225,7 @@ async function listStories(config: NotionSyncConfig) {
 			continue;
 		}
 
-		stories.push({
-			storyId,
-			twee,
-			lastSynced: page.properties['Last Synced']?.date?.start ?? null,
-			// Notion rounds this to the minute, so lastSynced (set on every push
-			// with full precision) is the better timestamp when both exist.
-			lastEdited: page.last_edited_time ?? null
-		});
+		stories.push({...pageMeta(page, storyId), twee});
 	}
 
 	return stories;
@@ -265,8 +287,11 @@ export function notionSync(): Plugin {
 					res.end(JSON.stringify(body));
 				}
 
+				// The client polls with a query string, so match on the path alone.
+				const url = new URL(req.url, 'http://localhost');
+
 				try {
-					if (req.url === '/__notion-sync/status') {
+					if (url.pathname === '/__notion-sync/status') {
 						return respond(200, {enabled: !!config});
 					}
 
@@ -274,12 +299,21 @@ export function notionSync(): Plugin {
 						return respond(503, {error: 'Notion sync is not configured'});
 					}
 
-					if (req.url === '/__notion-sync/stories' && req.method === 'GET') {
-						return respond(200, await listStories(config));
+					if (
+						url.pathname === '/__notion-sync/stories' &&
+						req.method === 'GET'
+					) {
+						// ?meta=1 is the cheap poll: timestamps without twee bodies.
+						return respond(
+							200,
+							url.searchParams.get('meta')
+								? await listStoryMeta(config)
+								: await listStories(config)
+						);
 					}
 
 					const storyMatch = /^\/__notion-sync\/stories\/([^/?]+)$/.exec(
-						req.url
+						url.pathname
 					);
 
 					if (storyMatch) {

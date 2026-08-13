@@ -4,6 +4,7 @@ import {usePersistence} from './persistence/use-persistence';
 import {usePrefsContext} from './prefs';
 import {useStoriesContext} from './stories';
 import {useStoryFormatsContext} from './story-formats';
+import {useNotionSyncPull} from './use-notion-sync-pull';
 import {useStoriesRepair} from './use-stories-repair';
 
 export const StateLoader: React.FC = ({children}) => {
@@ -86,9 +87,12 @@ export const StateLoader: React.FC = ({children}) => {
 		storiesRepaired
 	]);
 
-	return inited && formatsRepaired && prefsRepaired && storiesRepaired ? (
-		<>{children}</>
-	) : (
-		<LoadingCurtain />
-	);
+	const ready = inited && formatsRepaired && prefsRepaired && storiesRepaired;
+
+	// Only once the initial load has settled--a pull landing mid-load would be
+	// merged against incomplete state and then overwritten by the init below.
+
+	useNotionSyncPull(ready);
+
+	return ready ? <>{children}</> : <LoadingCurtain />;
 };
