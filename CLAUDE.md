@@ -53,6 +53,19 @@ stories DB의 twee는 **code 블록(language `plain text`)** 으로 저장하고
 "기존 자식 블록 DELETE → 새 code 블록 PATCH" 패턴을 쓴다. 원본 회고 본문을 갱신할 땐
 하위 페이지/DB는 보존하고 텍스트 블록만 교체한다.
 
+## 창작 시나리오 (회고와 나란한 두 번째 위저드)
+
+스토리 목록 툴바의 "시나리오" 버튼 → `/scenario`. 같은 위저드 컴포넌트(`RetroRoute`)를
+`mode="scenario"`로 재사용한다 — 연결/루트/AI 키 단계는 공유하고, 다음이 갈린다:
+
+- 프롬프트: `scripts/scenario-prompt.md` (창작 컨셉 — 3막, 성향/경로 선택, 변수 누적
+  멀티엔딩. 평행우주/허브 구조 금지). 스타일시트: `scripts/scenario-stylesheet.txt`
+  (원고지 테마 — 우주 테마와 구분).
+- API: `/api/translate`에 `mode: 'scenario'`, `/api/notion/retros`에 `kind=scenario`.
+- Notion 보관: 루트 바로 아래가 아니라 루트 아래 **"시나리오" 폴더 페이지**의 하위
+  페이지로 모은다(첫 생성 때 폴더 자동 생성). 회고 목록에서는 이 폴더를 걸러낸다.
+- "그때의 나에게" 메시지 저장(retro-link)은 회고 전용 — 시나리오는 만들지 않는다.
+
 ### 번역 규칙 / 컨셉 (단일 소스)
 
 번역 규칙·평행우주 컨셉·twee 형식은 **`scripts/retro-prompt.md`가 단일 소스**다.

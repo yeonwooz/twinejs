@@ -1,0 +1,35 @@
+:: Story Stylesheet [stylesheet]
+html {
+	background:#f4eee2 !important;
+	background-image:
+		radial-gradient(circle at 12% 8%, rgba(196,164,110,.18), transparent 40%),
+		radial-gradient(circle at 88% 92%, rgba(160,120,80,.14), transparent 45%),
+		linear-gradient(#f6f1e6, #efe6d3) !important;
+	background-attachment: fixed !important;
+}
+body { background: transparent !important; }
+tw-story {
+	background: transparent !important;
+	color:#3b3126 !important;
+	font-family:"Iowan Old Style", Palatino, Georgia, "Nanum Myeongjo", serif;
+	max-width:38em; line-height:1.9; padding:3.2rem 2.4rem;
+}
+tw-passage { display:block; animation: pageturn .7s ease-out; }
+@keyframes pageturn { from { opacity:0; transform:translateX(14px) } to { opacity:1; transform:none } }
+tw-passage h1 {
+	font-weight:600; letter-spacing:.04em; color:#2c2318;
+	border-bottom:1px solid rgba(120,90,50,.35); padding-bottom:.4em;
+}
+tw-link, .enchantment-link {
+	color:#8a4b2d; text-decoration:none;
+	border-bottom:1px dashed rgba(138,75,45,.5); transition:all .2s;
+}
+tw-link:hover, .enchantment-link:hover {
+	color:#c0392b; border-bottom:1px solid #c0392b;
+	background:rgba(192,57,43,.06);
+}
+tw-story input, tw-story textarea {
+	background:rgba(255,252,244,.9); color:#3b3126;
+	border:1px solid rgba(138,75,45,.4); border-radius:6px;
+	padding:.6em .8em; font-family:inherit; width:100%;
+}

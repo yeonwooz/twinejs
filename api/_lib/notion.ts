@@ -279,6 +279,30 @@ export async function weekPages(token: string, rootId: string) {
 		.sort((a: {week: number}, b: {week: number}) => b.week - a.week);
 }
 
+// 시나리오 페이지들은 루트 바로 아래가 아니라 루트 아래 "시나리오" 폴더 페이지에
+// 모은다 — 회고 목록과 섞이지 않게. 회고 목록을 만들 땐 이 폴더를 걸러낸다.
+export const SCENARIO_FOLDER = '시나리오';
+
+export async function findScenarioRoot(
+	token: string,
+	rootId: string
+): Promise<string | undefined> {
+	const pages = await listChildPages(token, rootId);
+	return pages.find(
+		(p: {title: string}) => p.title.trim() === SCENARIO_FOLDER
+	)?.id;
+}
+
+export async function ensureScenarioRoot(
+	token: string,
+	rootId: string
+): Promise<string> {
+	return (
+		(await findScenarioRoot(token, rootId)) ??
+		(await createRetroPage(token, rootId, SCENARIO_FOLDER)).id
+	);
+}
+
 // 루트 아래에 회고용 child page를 새로 만든다(페이지 제목 = 회고 이름). 본문은
 // 비어 있고 앱에서 자연어로 채운다(writeDraftText). 중복 검사는 호출부에서 한다.
 export async function createRetroPage(

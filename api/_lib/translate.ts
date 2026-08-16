@@ -80,8 +80,8 @@ export function repairStartPassage(twee: string): string {
 	return twee.replace(sd[0], sd[1] + JSON.stringify(data, null, 2));
 }
 
-export function withCosmicUI(twee: string): string {
-	const css = readScript('cosmic-stylesheet.txt').trimEnd();
+function withThemeUI(twee: string, stylesheetFile: string): string {
+	const css = readScript(stylesheetFile).trimEnd();
 	const stripped = twee.replace(
 		/\n:: [^\n]*\[stylesheet\][\s\S]*?(?=\n:: |\s*$)/g,
 		''
@@ -89,12 +89,25 @@ export function withCosmicUI(twee: string): string {
 	return stripped.trimEnd() + '\n\n' + css + '\n';
 }
 
+export function withCosmicUI(twee: string): string {
+	return withThemeUI(twee, 'cosmic-stylesheet.txt');
+}
+
+export function withScenarioUI(twee: string): string {
+	return withThemeUI(twee, 'scenario-stylesheet.txt');
+}
+
+// 위저드 종류. retro는 회고→평행우주 번역, scenario는 구상→창작 시나리오.
+// 프롬프트·스타일시트·문구가 갈리고 나머지 파이프라인은 같다.
+export type WizardMode = 'retro' | 'scenario';
+
 export interface TranslateInput {
 	apiKey: string;
 	provider: Provider;
 	model: string;
 	draftText: string;
 	weekLabel: string;
+	mode?: WizardMode;
 	qa?: [string, string][];
 	existingTwee?: string;
 	feedback?: string;
@@ -114,7 +127,10 @@ export interface TranslateResult extends ModelOutput {
 }
 
 function buildUser(input: TranslateInput): string {
-	let user = `주차: ${input.weekLabel}\n\n회고 초안:\n"""\n${input.draftText}\n"""\n`;
+	let user =
+		input.mode === 'scenario'
+			? `제목: ${input.weekLabel}\n\n시나리오 구상:\n"""\n${input.draftText}\n"""\n`
+			: `주차: ${input.weekLabel}\n\n회고 초안:\n"""\n${input.draftText}\n"""\n`;
 	if (input.existingTwee) {
 		user += `\n기존 twee(구절 제목과 StoryData 유지):\n"""\n${input.existingTwee}\n"""\n`;
 	}
@@ -207,7 +223,9 @@ async function translateOpenAI(
 }
 
 export async function translate(input: TranslateInput): Promise<TranslateResult> {
-	const system = readScript('retro-prompt.md');
+	const system = readScript(
+		input.mode === 'scenario' ? 'scenario-prompt.md' : 'retro-prompt.md'
+	);
 	const user = buildUser(input);
 	return input.provider === 'openai'
 		? translateOpenAI(input, system, user)

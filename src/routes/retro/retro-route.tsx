@@ -18,6 +18,63 @@ type Step =
 	| 'done'
 	| 'error';
 
+// 위저드 종류. 연결/루트/AI 키 단계와 파이프라인은 같고, 문구·프롬프트(서버가 mode로
+// 고름)·노션 보관 위치(kind)·회고 전용 메시지 저장만 갈린다.
+export type WizardMode = 'retro' | 'scenario';
+
+const COPY = {
+	retro: {
+		heading: '인터랙티브 회고',
+		spendLabel: '이번 회고',
+		spendVerb: '번역',
+		connectIntro: 'Notion을 연결하면 회고를 인터랙티브 스토리로 만들 수 있어요.',
+		rootIntro: '회고를 담아 둘 루트 페이지를 골라주세요.',
+		selectIntro: '회고 제목을 입력해 새로 시작하세요. (필수 · 이름은 겹칠 수 없어요)',
+		titlePlaceholder: '예: 3주차 회고 / 첫 배포 회고 / 2026 상반기',
+		emptyTitleError: '회고 제목을 입력해 주세요.',
+		dupTitleError: (title: string) =>
+			`"${title}" 이름의 회고가 이미 있어요. 다른 제목을 써 주세요.`,
+		newButton: '새 회고 시작',
+		existingLabel: '이어서 작업할 기존 회고',
+		composeIntro: '회고를 자연어로 자유롭게 써 주세요.',
+		composePlaceholder:
+			'이번 기간 동안 어떤 결정을 했고, 무엇이 후회되고, 무엇이 좋았는지 편하게 적어 주세요. 저장하면 Notion 그 회고 페이지에도 남아요.',
+		composeButton: '인터랙티브 회고로 만들기',
+		backToList: '← 회고 목록',
+		translating: '평행우주 회고로 번역하는 중…',
+		questionsIntro: '회고에 비어 있는 부분이 있어요. 채워 주세요:',
+		questionsButton: '이어서 번역',
+		refinePlaceholder: '예: 우주 β의 결과를 더 극적으로',
+		backToOthers: '← 다른 회고'
+	},
+	scenario: {
+		heading: '창작 시나리오',
+		spendLabel: '이번 시나리오',
+		spendVerb: '생성',
+		connectIntro:
+			'Notion을 연결하면 이야기 구상을 선택 분기가 있는 인터랙티브 시나리오로 만들 수 있어요.',
+		rootIntro: '시나리오를 담아 둘 루트 페이지를 골라주세요.',
+		selectIntro:
+			'시나리오 제목을 입력해 새로 시작하세요. (필수 · 이름은 겹칠 수 없어요)',
+		titlePlaceholder: '예: 경성 미스터리 / 우주 정거장의 하루 / 마지막 출근',
+		emptyTitleError: '시나리오 제목을 입력해 주세요.',
+		dupTitleError: (title: string) =>
+			`"${title}" 이름의 시나리오가 이미 있어요. 다른 제목을 써 주세요.`,
+		newButton: '새 시나리오 시작',
+		existingLabel: '이어서 작업할 기존 시나리오',
+		composeIntro: '만들고 싶은 이야기를 자유롭게 설명해 주세요.',
+		composePlaceholder:
+			'장르, 주인공, 배경, 갈등, 원하는 결말의 분위기… 떠오르는 대로 적어 주세요. 얇으면 AI가 먼저 물어보고, 저장하면 Notion 그 시나리오 페이지에도 남아요.',
+		composeButton: '인터랙티브 시나리오로 만들기',
+		backToList: '← 시나리오 목록',
+		translating: '갈림길 있는 이야기로 빚는 중…',
+		questionsIntro: '이야기의 뼈대를 세우는 데 더 필요한 게 있어요. 채워 주세요:',
+		questionsButton: '이어서 만들기',
+		refinePlaceholder: '예: 결말을 하나 더 / 중반 선택을 더 어렵게',
+		backToOthers: '← 다른 시나리오'
+	}
+} as const;
+
 interface NamedPage {
 	id: string;
 	title: string;
@@ -79,7 +136,12 @@ function fmtTokens(n: number): string {
 	return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
 }
 
-export const RetroRoute: React.FC = () => {
+export interface RetroRouteProps {
+	mode?: WizardMode;
+}
+
+export const RetroRoute: React.FC<RetroRouteProps> = ({mode = 'retro'}) => {
+	const copy = COPY[mode];
 	const history = useHistory();
 	const location = useLocation();
 	const {dispatch, stories} = useStoriesContext();
@@ -169,7 +231,9 @@ export const RetroRoute: React.FC = () => {
 	const loadRetros = React.useCallback(async () => {
 		setStep('loading');
 		try {
-			const {retros} = await api('/api/notion/retros');
+			const {retros} = await api(
+				mode === 'scenario' ? '/api/notion/retros?kind=scenario' : '/api/notion/retros'
+			);
 			setRetros(retros);
 			setNewTitle('');
 			setTitleError(undefined);
@@ -177,7 +241,7 @@ export const RetroRoute: React.FC = () => {
 		} catch (e) {
 			fail(e);
 		}
-	}, [fail]);
+	}, [mode, fail]);
 
 	// 루트까지 정해진 뒤: AI 키가 있으면 회고 목록으로, 없으면 키 입력 단계로.
 	const afterConfig = React.useCallback(async () => {
@@ -295,7 +359,8 @@ export const RetroRoute: React.FC = () => {
 				qa: qaList,
 				existingTwee,
 				feedback: fb,
-				model: model || undefined
+				model: model || undefined,
+				mode
 			});
 			if (res.usage) {
 				addSpend(res.model, res.usage, res.costUsd ?? null);
@@ -320,24 +385,25 @@ export const RetroRoute: React.FC = () => {
 		}
 	}
 
-	// 새 회고 제목 입력 → 중복 검사 → 노션 페이지 생성 → compose.
+	// 새 회고/시나리오 제목 입력 → 중복 검사 → 노션 페이지 생성 → compose.
 	async function startNewRetro() {
 		const title = newTitle.trim();
 		setTitleError(undefined);
 		if (!title) {
-			setTitleError('회고 제목을 입력해 주세요.');
+			setTitleError(copy.emptyTitleError);
 			return;
 		}
 		if (
 			retros.some(r => r.title.trim().toLowerCase() === title.toLowerCase())
 		) {
-			setTitleError(`"${title}" 이름의 회고가 이미 있어요. 다른 제목을 써 주세요.`);
+			setTitleError(copy.dupTitleError(title));
 			return;
 		}
 		setStep('loading');
 		try {
 			const created: NamedPage = await postJson('/api/notion/retros', {
-				title
+				title,
+				kind: mode
 			});
 			setRetro(created);
 			setRetros(rs => [created, ...rs]);
@@ -418,10 +484,11 @@ export const RetroRoute: React.FC = () => {
 	const retroTitle = retro?.title;
 
 	React.useEffect(() => {
-		if (createdId && retroId) {
+		// "그때의 나에게" 메시지 저장 통로는 회고 전용 — 시나리오는 매핑을 만들지 않는다.
+		if (mode === 'retro' && createdId && retroId) {
 			setRetroLinkForStory(createdId, {pageId: retroId, title: retroTitle ?? ''});
 		}
-	}, [createdId, retroId, retroTitle]);
+	}, [mode, createdId, retroId, retroTitle]);
 
 	function refine() {
 		if (!retro || !twee) return;
@@ -450,7 +517,7 @@ export const RetroRoute: React.FC = () => {
 		<div className="retro-route">
 			<div className="retro-card">
 				<div className="retro-header">
-					<h1>인터랙티브 회고</h1>
+					<h1>{copy.heading}</h1>
 					<button
 						className="retro-home"
 						onClick={() => history.push('/')}
@@ -462,8 +529,8 @@ export const RetroRoute: React.FC = () => {
 
 				{spend && (
 					<p className="retro-spend">
-						이번 회고 — 번역 {spend.calls}회 · 입력 {fmtTokens(spend.inputTokens)} /
-						출력 {fmtTokens(spend.outputTokens)} 토큰
+						{copy.spendLabel} — {copy.spendVerb} {spend.calls}회 · 입력{' '}
+						{fmtTokens(spend.inputTokens)} / 출력 {fmtTokens(spend.outputTokens)} 토큰
 						{spend.cacheReadTokens > 0 &&
 							` · 캐시 재사용 ${fmtTokens(spend.cacheReadTokens)}`}
 						{spend.usd === null
@@ -479,7 +546,7 @@ export const RetroRoute: React.FC = () => {
 						{denied && (
 							<p className="retro-muted">연결이 취소됐어요. 다시 시도해 주세요.</p>
 						)}
-						<p>Notion을 연결하면 회고를 인터랙티브 스토리로 만들 수 있어요.</p>
+						<p>{copy.connectIntro}</p>
 						<a className="retro-btn primary" href="/api/notion/login">
 							Notion으로 연결
 						</a>
@@ -488,7 +555,7 @@ export const RetroRoute: React.FC = () => {
 
 				{step === 'root' && (
 					<>
-						<p>회고를 담아 둘 루트 페이지를 골라주세요.</p>
+						<p>{copy.rootIntro}</p>
 						<ul className="retro-list">
 							{pages.map(p => (
 								<li key={p.id}>
@@ -554,12 +621,12 @@ export const RetroRoute: React.FC = () => {
 
 				{step === 'select' && (
 					<>
-						<p>회고 제목을 입력해 새로 시작하세요. (필수 · 이름은 겹칠 수 없어요)</p>
+						<p>{copy.selectIntro}</p>
 						<div className="retro-new">
 							<input
 								type="text"
 								value={newTitle}
-								placeholder="예: 3주차 회고 / 첫 배포 회고 / 2026 상반기"
+								placeholder={copy.titlePlaceholder}
 								onChange={e => {
 									setNewTitle(e.target.value);
 									setTitleError(undefined);
@@ -573,14 +640,14 @@ export const RetroRoute: React.FC = () => {
 								onClick={startNewRetro}
 								disabled={!newTitle.trim()}
 							>
-								새 회고 시작
+								{copy.newButton}
 							</button>
 						</div>
 						{titleError && <p className="retro-error">{titleError}</p>}
 
 						{retros.length > 0 && (
 							<>
-								<p className="retro-muted">이어서 작업할 기존 회고</p>
+								<p className="retro-muted">{copy.existingLabel}</p>
 								<ul className="retro-list">
 									{retros.map(r => (
 										<li key={r.id}>
@@ -610,14 +677,14 @@ export const RetroRoute: React.FC = () => {
 				{step === 'compose' && (
 					<>
 						<p>
-							<strong>{retro?.title}</strong> — 회고를 자연어로 자유롭게 써 주세요.
+							<strong>{retro?.title}</strong> — {copy.composeIntro}
 						</p>
 						<textarea
 							className="retro-compose"
 							rows={12}
 							value={draft}
 							onChange={e => setDraft(e.target.value)}
-							placeholder="이번 기간 동안 어떤 결정을 했고, 무엇이 후회되고, 무엇이 좋았는지 편하게 적어 주세요. 저장하면 Notion 그 회고 페이지에도 남아요."
+							placeholder={copy.composePlaceholder}
 						/>
 						{models.length > 0 && (
 							<div className="retro-model">
@@ -639,24 +706,24 @@ export const RetroRoute: React.FC = () => {
 								onClick={submitCompose}
 								disabled={!draft.trim()}
 							>
-								인터랙티브 회고로 만들기
+								{copy.composeButton}
 							</button>
 						</div>
 						<button className="retro-back" onClick={loadRetros}>
-							← 회고 목록
+							{copy.backToList}
 						</button>
 					</>
 				)}
 
 				{step === 'translating' && (
 					<p className="retro-muted">
-						{retro?.title} 을(를) 평행우주 회고로 번역하는 중…
+						{retro?.title} 을(를) {copy.translating}
 					</p>
 				)}
 
 				{step === 'questions' && (
 					<>
-						<p>회고에 비어 있는 부분이 있어요. 채워 주세요:</p>
+						<p>{copy.questionsIntro}</p>
 						{questions.map((q, i) => (
 							<div key={i} className="retro-q">
 								<label>{q}</label>
@@ -674,7 +741,7 @@ export const RetroRoute: React.FC = () => {
 							</div>
 						))}
 						<button className="retro-btn primary" onClick={submitAnswers}>
-							이어서 번역
+							{copy.questionsButton}
 						</button>
 					</>
 				)}
@@ -704,38 +771,40 @@ export const RetroRoute: React.FC = () => {
 							</button>
 						</div>
 
-						<div className="retro-message">
-							<label>
-								그때의 나에게 한마디 — 여기서 바로 남기기 (재생 중 마지막 구절에 쓴
-								메시지도 같은 회고 페이지에 저장돼요)
-							</label>
-							<textarea
-								rows={3}
-								value={message}
-								onChange={e => setMessage(e.target.value)}
-								disabled={msgSaved}
-								placeholder="예: 과거의 너에게 — 그 선택, 후회하지 않아도 돼…"
-							/>
-							{msgSaved ? (
-								<p className="retro-muted">✓ Notion에 저장됐어요.</p>
-							) : (
-								<button
-									className="retro-btn"
-									onClick={saveMessage}
-									disabled={!message.trim()}
-								>
-									Notion에 저장
-								</button>
-							)}
-							{msgError && <p className="retro-error">{msgError}</p>}
-						</div>
+						{mode === 'retro' && (
+							<div className="retro-message">
+								<label>
+									그때의 나에게 한마디 — 여기서 바로 남기기 (재생 중 마지막 구절에 쓴
+									메시지도 같은 회고 페이지에 저장돼요)
+								</label>
+								<textarea
+									rows={3}
+									value={message}
+									onChange={e => setMessage(e.target.value)}
+									disabled={msgSaved}
+									placeholder="예: 과거의 너에게 — 그 선택, 후회하지 않아도 돼…"
+								/>
+								{msgSaved ? (
+									<p className="retro-muted">✓ Notion에 저장됐어요.</p>
+								) : (
+									<button
+										className="retro-btn"
+										onClick={saveMessage}
+										disabled={!message.trim()}
+									>
+										Notion에 저장
+									</button>
+								)}
+								{msgError && <p className="retro-error">{msgError}</p>}
+							</div>
+						)}
 						<div className="retro-refine">
 							<label>보완하고 싶은 점이 있으면 적어주세요</label>
 							<textarea
 								rows={2}
 								value={feedback}
 								onChange={e => setFeedback(e.target.value)}
-								placeholder="예: 우주 β의 결과를 더 극적으로"
+								placeholder={copy.refinePlaceholder}
 							/>
 							{models.length > 0 && (
 								<div className="retro-model">
@@ -758,7 +827,7 @@ export const RetroRoute: React.FC = () => {
 						</div>
 						<div className="retro-back-row">
 							<button className="retro-back" onClick={loadRetros}>
-								← 다른 회고
+								{copy.backToOthers}
 							</button>
 							<button className="retro-back" onClick={loadRoots}>
 								← 다른 Notion 페이지

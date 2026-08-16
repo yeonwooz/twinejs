@@ -6,7 +6,9 @@ import {
 	repairStartPassage,
 	translate,
 	validateTwee,
-	withCosmicUI
+	WizardMode,
+	withCosmicUI,
+	withScenarioUI
 } from './_lib/translate';
 
 // 초안 → twee 번역. LLM 키는 봉인 세션 쿠키(사용자 입력) 우선, 없으면 Notion 루트
@@ -24,6 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		existingTwee?: string;
 		feedback?: string;
 		model?: string;
+		mode?: WizardMode;
 	};
 	if (!body.draft) {
 		res.status(400).json({error: 'draft required'});
@@ -40,12 +43,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		}
 
 		const model = resolveModel(key.provider, body.model);
+		const mode: WizardMode = body.mode === 'scenario' ? 'scenario' : 'retro';
 		const common = {
 			apiKey: key.apiKey,
 			provider: key.provider,
 			model,
 			draftText: body.draft,
 			weekLabel: body.weekLabel ?? '',
+			mode,
 			qa: body.qa
 		};
 		let result = await translate({
@@ -93,7 +98,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 		res.status(200).json({
 			questions: [],
-			twee: withCosmicUI(result.twee),
+			twee:
+				mode === 'scenario'
+					? withScenarioUI(result.twee)
+					: withCosmicUI(result.twee),
 			draftUpdate: result.draftUpdate,
 			warnings: problems,
 			...meta()

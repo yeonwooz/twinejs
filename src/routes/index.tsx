@@ -29,6 +29,9 @@ export const Routes: React.FC = () => {
 				<Route path="/retro">
 					<RetroRoute />
 				</Route>
+				<Route path="/scenario">
+					<RetroRoute mode="scenario" />
+				</Route>
 				<Route path="/stories/:storyId/play">
 					<StoryPlayRoute />
 				</Route>
