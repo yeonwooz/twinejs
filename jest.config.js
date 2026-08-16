@@ -8,7 +8,7 @@ module.exports = {
 	},
 	preset: 'ts-jest/presets/js-with-ts',
 	resetMocks: true,
-	roots: ['<rootDir>/src'],
+	roots: ['<rootDir>/api', '<rootDir>/src'],
 	setupFilesAfterEnv: ['<rootDir>/src/setupTests.ts'],
 	testEnvironment: 'jest-environment-jsdom',
 	// segseg is a ESM-only module.

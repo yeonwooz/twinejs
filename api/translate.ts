@@ -4,6 +4,7 @@ import {resolveLlmKey} from './_lib/llm';
 import {addUsage, costUsd, resolveModel} from './_lib/models';
 import {
 	repairStartPassage,
+	stripEmptyMacros,
 	translate,
 	validateTwee,
 	WizardMode,
@@ -93,6 +94,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 				});
 				usage = addUsage(usage, result.usage);
 				problems = validateTwee(result.twee);
+			}
+			// 보정까지 하고도 값이 빠진 매크로가 남았으면 그것만 지운다. 재생이
+			// 문법 오류로 죽는 것보다는 변수 하나가 비는 편이 낫다.
+			const stripped = stripEmptyMacros(result.twee);
+			if (stripped !== result.twee) {
+				result = {...result, twee: stripped};
+				problems = [
+					...validateTwee(result.twee),
+					'값이 빠진 매크로를 지웠습니다 — 그 자리에서 변수는 기록되지 않습니다.'
+				];
 			}
 		}
 

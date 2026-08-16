@@ -32,6 +32,11 @@ const OUTPUT_SCHEMA = {
 	}
 };
 
+// (set: $증거 to ) 처럼 값이 빠진 매크로. 재생할 때가 되어서야 Harlowe가
+// "isn't valid Harlowe syntax for the inside of a macro call"로 터지므로,
+// 검증에서 잡고(validateTwee) 끝내 안 고쳐지면 지운다(stripEmptyMacros).
+const EMPTY_MACRO = /\((?:set|put|if|unless|else-if):[^)]*?\b(?:to|into|is)\s*\)/g;
+
 export function validateTwee(twee: string): string[] {
 	const titles = new Set(
 		[...twee.matchAll(/^:: (.+)$/gm)].map(m =>
@@ -49,13 +54,7 @@ export function validateTwee(twee: string): string[] {
 	} catch {
 		/* ignore */
 	}
-	// (set: $증거 to ) 처럼 값이 빠진 매크로. 재생할 때가 되어서야 Harlowe가
-	// "isn't valid Harlowe syntax for the inside of a macro call"로 터진다.
-	const emptyOperands = [
-		...twee.matchAll(
-			/\((?:set|put|if|unless|else-if):[^)]*?\b(?:to|into|is)\s*\)/g
-		)
-	].map(m => m[0]);
+	const emptyOperands = [...twee.matchAll(EMPTY_MACRO)].map(m => m[0]);
 
 	const problems: string[] = [];
 	if (missing.length)
@@ -68,6 +67,13 @@ export function validateTwee(twee: string): string[] {
 		);
 	}
 	return problems;
+}
+
+// 최후의 보루. LLM 보정까지 거치고도 값이 빠진 매크로가 남으면 그 매크로만 지운다 —
+// 변수 하나를 잃는 것보다 재생 자체가 문법 오류로 죽는 게 훨씬 나쁘다. 값을 지어내지는
+// 않는다(무엇을 넣어야 할지는 이야기가 정하는 것이지 코드가 정할 일이 아니다).
+export function stripEmptyMacros(twee: string): string {
+	return twee.replace(EMPTY_MACRO, '');
 }
 
 // StoryData.start가 없거나 실제 구절을 안 가리키면 첫 서사 구절로 코드에서 지정한다.
