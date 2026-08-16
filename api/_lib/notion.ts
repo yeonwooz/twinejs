@@ -21,7 +21,9 @@ export async function notion(
 	});
 	if (!res.ok) {
 		// 메시지에 토큰이 없도록 상태/본문만.
-		throw new Error(`Notion ${method} ${path} → ${res.status}: ${await res.text()}`);
+		throw new Error(
+			`Notion ${method} ${path} → ${res.status}: ${await res.text()}`
+		);
 	}
 	return res.json();
 }
@@ -77,7 +79,8 @@ export async function readBlockText(
 
 export function tweeToCodeBlocks(twee: string) {
 	const chunks: string[] = [];
-	for (let i = 0; i < twee.length; i += CHUNK) chunks.push(twee.slice(i, i + CHUNK));
+	for (let i = 0; i < twee.length; i += CHUNK)
+		chunks.push(twee.slice(i, i + CHUNK));
 	if (chunks.length === 0) chunks.push('');
 	const blocks = [];
 	for (let i = 0; i < chunks.length; i += ITEMS_PER_BLOCK) {
@@ -102,26 +105,73 @@ export function tweeFromBlocks(blocks: any[]): string {
 		.join('');
 }
 
-export async function ensureStoriesDb(
-	token: string,
-	rootPageId: string
-): Promise<string> {
-	// 루트 아래 child_database 중 "Twine Stories"를 찾고 없으면 만든다.
+// stories DB는 "고른 루트 페이지당 하나"다. 회고냐 창작 시나리오냐로 나누지 않는다
+// — 루트를 고르는 것 자체가 이미 보관 위치를 고르는 일이고, 같은 루트를 골랐다면
+// 거기 있는 DB에 넣는 게 사용자가 기대하는 동작이다.
+const STORIES_DB_BASE = 'Twine Stories';
+
+// 이름 뒤에 뭐가 붙어도("Twine Stories (창작)" 등) 같은 DB로 인정한다 — 노션에서
+// 이름을 다듬는 건 흔한 일이고, 못 알아보면 빈 DB를 또 만들게 된다.
+function isStoriesDb(title: string) {
+	return title.includes(STORIES_DB_BASE);
+}
+
+// 콜아웃·토글 안으로 옮겨둔 DB도 찾아준다. 직속 자식만 보면, 사용자가 노션에서
+// 정리하려고 DB를 콜아웃에 넣는 순간 "없다"고 판단해 같은 이름의 빈 DB를 또 만든다.
+const CONTAINER_SCAN_LIMIT = 10;
+
+async function childBlocks(token: string, blockId: string) {
 	const {results} = await notion(
 		token,
 		'GET',
-		`/blocks/${rootPageId}/children?page_size=100`
+		`/blocks/${blockId}/children?page_size=100`
 	);
-	const existing = results.find(
-		(b: any) =>
-			b.type === 'child_database' &&
-			(b.child_database?.title ?? '').includes('Twine Stories')
+	return results as any[];
+}
+
+function findDbBlock(blocks: any[]) {
+	return blocks.find(
+		b =>
+			b.type === 'child_database' && isStoriesDb(b.child_database?.title ?? '')
 	);
-	if (existing) return existing.id;
+}
+
+export async function findStoriesDb(
+	token: string,
+	parentPageId: string
+): Promise<string | undefined> {
+	const blocks = await childBlocks(token, parentPageId);
+	const direct = findDbBlock(blocks);
+
+	if (direct) return direct.id;
+
+	const containers = blocks
+		.filter(
+			b =>
+				b.has_children && b.type !== 'child_page' && b.type !== 'child_database'
+		)
+		.slice(0, CONTAINER_SCAN_LIMIT);
+
+	for (const container of containers) {
+		const nested = findDbBlock(await childBlocks(token, container.id));
+
+		if (nested) return nested.id;
+	}
+
+	return undefined;
+}
+
+export async function ensureStoriesDb(
+	token: string,
+	parentPageId: string
+): Promise<string> {
+	const existing = await findStoriesDb(token, parentPageId);
+
+	if (existing) return existing;
 
 	const db = await notion(token, 'POST', '/databases', {
-		parent: {type: 'page_id', page_id: rootPageId},
-		title: [{type: 'text', text: {content: 'Twine Stories'}}],
+		parent: {type: 'page_id', page_id: parentPageId},
+		title: [{type: 'text', text: {content: STORIES_DB_BASE}}],
 		properties: {
 			Name: {title: {}},
 			'Story ID': {rich_text: {}},
@@ -190,6 +240,14 @@ export async function listStories(
 	return stories;
 }
 
+export async function storyExistsIn(
+	token: string,
+	dbId: string,
+	storyId: string
+) {
+	return !!(await findPageByStoryId(token, dbId, storyId));
+}
+
 async function findPageByStoryId(token: string, dbId: string, storyId: string) {
 	const result = await notion(token, 'POST', `/databases/${dbId}/query`, {
 		filter: {property: 'Story ID', rich_text: {equals: storyId}}
@@ -234,7 +292,11 @@ export async function upsertStory(
 	return true;
 }
 
-export async function archiveStory(token: string, dbId: string, storyId: string) {
+export async function archiveStory(
+	token: string,
+	dbId: string,
+	storyId: string
+) {
 	const existing = await findPageByStoryId(token, dbId, storyId);
 	if (existing) {
 		await notion(token, 'PATCH', `/pages/${existing.id}`, {archived: true});
@@ -288,9 +350,8 @@ export async function findScenarioRoot(
 	rootId: string
 ): Promise<string | undefined> {
 	const pages = await listChildPages(token, rootId);
-	return pages.find(
-		(p: {title: string}) => p.title.trim() === SCENARIO_FOLDER
-	)?.id;
+	return pages.find((p: {title: string}) => p.title.trim() === SCENARIO_FOLDER)
+		?.id;
 }
 
 export async function ensureScenarioRoot(
@@ -324,7 +385,8 @@ export async function createRetroPage(
 export function textToParagraphBlocks(text: string) {
 	return text.split('\n').map(line => {
 		const chunks: string[] = [];
-		for (let i = 0; i < line.length; i += CHUNK) chunks.push(line.slice(i, i + CHUNK));
+		for (let i = 0; i < line.length; i += CHUNK)
+			chunks.push(line.slice(i, i + CHUNK));
 		return {
 			object: 'block',
 			type: 'paragraph',
@@ -401,7 +463,8 @@ export async function appendMessage(
 	const body = `[${stamp}] 다른 우주의 내가 보낸 메시지 — ${message}`;
 	// rich_text item당 2000자 제한 — 길면 여러 item으로 쪼갠다(한 callout 안에서 이어짐).
 	const chunks: string[] = [];
-	for (let i = 0; i < body.length; i += CHUNK) chunks.push(body.slice(i, i + CHUNK));
+	for (let i = 0; i < body.length; i += CHUNK)
+		chunks.push(body.slice(i, i + CHUNK));
 
 	await notion(token, 'PATCH', `/blocks/${pageId}/children`, {
 		children: [

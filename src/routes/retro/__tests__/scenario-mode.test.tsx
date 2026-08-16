@@ -19,7 +19,11 @@ function mockApi(routes: Record<string, unknown>) {
 		const body = routes[key];
 
 		if (body === undefined) {
-			return {ok: false, status: 404, json: async () => ({error: `no mock: ${key}`})};
+			return {
+				ok: false,
+				status: 404,
+				json: async () => ({error: `no mock: ${key}`})
+			};
 		}
 		return {ok: true, status: 200, json: async () => body};
 	});
@@ -39,7 +43,12 @@ const TRANSLATED = {
 	twee: ':: StoryTitle\nT\n\n:: StoryData\n{"start":"시작"}\n\n:: 시작\n끝',
 	draftUpdate: '구상',
 	model: 'claude-opus-4-8',
-	usage: {inputTokens: 1000, outputTokens: 2000, cacheReadTokens: 0, cacheWriteTokens: 0},
+	usage: {
+		inputTokens: 1000,
+		outputTokens: 2000,
+		cacheReadTokens: 0,
+		cacheWriteTokens: 0
+	},
 	costUsd: 0.1
 };
 
@@ -113,6 +122,39 @@ describe('<RetroRoute mode="scenario">', () => {
 		expect(screen.queryByText(/그때의 나에게 한마디/)).not.toBeInTheDocument();
 	});
 
+	// 이 태그가 Notion sync의 분기점이다 — 태그가 없으면 창작물이 회고 DB로 간다.
+	it('만들어진 스토리에 scenario 태그를 달아 import 한다', async () => {
+		const dispatch = jest.fn();
+
+		(useStoriesContext as jest.Mock).mockReturnValue({dispatch, stories: []});
+		mockApi({
+			'GET /api/session': CONNECTED,
+			'GET /api/llm': LLM_READY,
+			'GET /api/notion/retros': {retros: [{id: 's1', title: '경성 미스터리'}]},
+			'GET /api/notion/draft': {draft: '경성 배경의 미스터리를 만들고 싶다.'},
+			'POST /api/translate': TRANSLATED
+		});
+
+		renderScenario();
+		await userEvent.click(
+			await screen.findByRole('button', {name: /경성 미스터리/})
+		);
+		await screen.findByRole('button', {name: '▶ Play'});
+
+		// importStories는 thunk라 dispatch에 함수로 들어온다 — 실행해서 스토리를 본다.
+		const thunk = dispatch.mock.calls
+			.map(([arg]) => arg)
+			.find(arg => typeof arg === 'function');
+		const inner = jest.fn();
+
+		thunk(inner);
+		expect(inner).toHaveBeenCalledWith(
+			expect.objectContaining({
+				props: expect.objectContaining({tags: ['scenario']})
+			})
+		);
+	});
+
 	it('새 시나리오 생성 요청에 kind=scenario를 싣는다', async () => {
 		const fetchMock = mockApi({
 			'GET /api/session': CONNECTED,
@@ -126,7 +168,9 @@ describe('<RetroRoute mode="scenario">', () => {
 			await screen.findByPlaceholderText(/경성 미스터리/),
 			'마지막 출근'
 		);
-		await userEvent.click(screen.getByRole('button', {name: '새 시나리오 시작'}));
+		await userEvent.click(
+			screen.getByRole('button', {name: '새 시나리오 시작'})
+		);
 
 		await waitFor(() => {
 			const call = fetchMock.mock.calls.find(

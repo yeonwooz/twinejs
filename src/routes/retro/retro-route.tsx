@@ -3,6 +3,7 @@ import {useHistory, useLocation} from 'react-router-dom';
 import {importStories, useStoriesContext} from '../../store/stories';
 import {useStoriesRepair} from '../../store/use-stories-repair';
 import {storyFromTwee} from '../../util/twee';
+import {SCENARIO_TAG} from '../../store/persistence/notion-sync';
 import {setRetroLinkForStory} from '../../util/retro-link';
 import './retro-route.css';
 
@@ -464,7 +465,14 @@ export const RetroRoute: React.FC<RetroRouteProps> = ({mode = 'retro'}) => {
 	}
 
 	function finishTwee(finalTwee: string) {
-		const story = storyFromTwee(finalTwee);
+		const parsed = storyFromTwee(finalTwee);
+		// 시나리오는 편집기 목록에서 구분되게 태그만 달아둔다 — 어느 노션 DB에
+		// 저장될지는 위저드에서 고른 루트가 정한다(store/persistence/notion-sync).
+		const story =
+			mode === 'scenario' && !parsed.tags.includes(SCENARIO_TAG)
+				? {...parsed, tags: [...parsed.tags, SCENARIO_TAG]}
+				: parsed;
+
 		dispatch(importStories([story], stories));
 		repairStories();
 		setTwee(finalTwee);

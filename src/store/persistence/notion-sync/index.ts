@@ -1,6 +1,11 @@
-// Mirrors story changes to a Notion database through the dev server's
-// /__notion-sync/ middleware (see vite-plugin-notion-sync.ts at the repo
-// root). This is a companion to local storage persistence, not a replacement:
+// Mirrors story changes to a Notion database through /__notion-sync/. In the
+// dev server that path is served by vite-plugin-notion-sync.ts (token and
+// database from .env.local); in deployment vercel.json rewrites it to the
+// session-backed functions under api/notion-sync/, which resolve the database
+// from the root page the signed-in user picked. One database per root page --
+// retrospectives and creative scenarios written under the same root share it.
+//
+// This is a companion to local storage persistence, not a replacement:
 // local storage stays the fast working copy, and Notion receives debounced
 // snapshots in twee format. On load, stories edited directly in Notion since
 // the last local edit are pulled back in (see mergeStoriesFromNotion).
@@ -20,6 +25,14 @@ import {
 import {isPersistablePassageChange} from '../persistable-changes';
 
 const SYNC_DEBOUNCE_MS = 3000;
+
+/**
+ * Marks stories made by the scenario wizard. Purely a label for the author's
+ * benefit -- where a story is stored depends on the Notion root page picked in
+ * the wizard, not on this tag. Story tags aren't serialized to twee, so tagging
+ * never registers as a content change during merges.
+ */
+export const SCENARIO_TAG = 'scenario';
 
 let enabled: boolean | undefined;
 let lastState: StoriesState = [];

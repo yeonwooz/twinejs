@@ -111,6 +111,8 @@ async function listChildPages(pageId) {
 }
 
 // stories DB 스키마는 vite-plugin-notion-sync.ts의 upsertStory/listStories와 일치.
+// DB는 루트 페이지당 하나다 — 회고 루트 아래에 만들고, 다른 루트를 쓰는 스토리는
+// 그 루트의 DB로 간다(api/_lib/stories-db.ts).
 async function createStoriesDb(rootPageId) {
 	const db = await notion('POST', '/databases', {
 		parent: {type: 'page_id', page_id: rootPageId},
@@ -208,9 +210,16 @@ function validateTwee(twee) {
 	} catch {
 		/* ignore */
 	}
+	// (set: $증거 to ) 처럼 값이 빠진 매크로 — 재생할 때 Harlowe가 문법 오류로 터진다.
+	const emptyOperands = [
+		...twee.matchAll(/\((?:set|put|if|unless|else-if):[^)]*?\b(?:to|into|is)\s*\)/g)
+	].map(m => m[0]);
 	const problems = [];
 	if (missing.length) problems.push(`끊긴 링크 대상: ${[...new Set(missing)].join(', ')}`);
 	if (!start || !titles.has(start)) problems.push(`StoryData.start "${start}"가 구절로 없음`);
+	if (emptyOperands.length) {
+		problems.push(`값이 빠진 매크로: ${[...new Set(emptyOperands)].join(', ')}`);
+	}
 	return problems;
 }
 

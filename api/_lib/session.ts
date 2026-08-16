@@ -21,9 +21,12 @@ export const LLM_KEY_MAX_AGE = 60 * 60 * 12;
 export interface Session {
 	// Notion OAuth access token.
 	token: string;
-	// 이 사용자의 stories DB id (위저드에서 회고 루트를 고른 뒤 채워짐).
+	// 지금 고른 루트 아래의 stories DB id — 새 스토리는 여기 저장된다.
 	dbId?: string;
-	// 회고 루트 페이지 id (위저드에서 고름).
+	// 이 세션에서 써 본 stories DB 전부(루트를 바꿔가며 쓸 때). 읽을 땐 이걸 다
+	// 합쳐서 본다 — api/_lib/stories-db.ts의 allDbs 참고.
+	dbIds?: string[];
+	// 루트 페이지 id (위저드에서 고름).
 	rootId?: string;
 	workspaceName?: string;
 	// LLM API 키(사용자가 앱에서 입력). Notion 토큰과 동일하게 이 봉인 쿠키에만 담긴다

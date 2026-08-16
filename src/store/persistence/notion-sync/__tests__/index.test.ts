@@ -253,6 +253,52 @@ describe('mergeStoriesFromNotion', () => {
 	});
 });
 
+// 어느 노션 DB에 저장할지는 서버가 정한다(위저드에서 고른 루트 페이지 아래의 DB).
+// 클라는 스토리 내용만 올린다.
+describe('푸시 본문', () => {
+	it('twee와 식별자만 싣는다', async () => {
+		jest.resetModules();
+		jest.useFakeTimers();
+
+		const fetchMock = jest.fn(async (url: string, init?: RequestInit) => ({
+			ok: true,
+			json: async () => (String(url).endsWith('/status') ? {enabled: true} : []),
+			init
+		}));
+
+		(global as any).fetch = fetchMock;
+
+		const mod = await import('..');
+		// scenario 태그는 편집기에서 구분하려고 다는 라벨일 뿐 — 저장 위치를 바꾸지
+		// 않으므로 본문에 실리지 않는다.
+		const story = {
+			...localStory(TWEE, 'story-1', new Date(1000)),
+			tags: ['scenario']
+		};
+
+		mod.notionSaveMiddleware([story], {
+			props: {},
+			storyId: story.id,
+			type: 'updateStory'
+		} as any);
+
+		await jest.advanceTimersByTimeAsync(5000);
+		jest.useRealTimers();
+
+		const call = fetchMock.mock.calls.find(([url]) =>
+			String(url).includes('/stories/')
+		);
+
+		expect(call?.[1]?.body ? JSON.parse(String(call[1].body)) : undefined).toEqual(
+			{
+				ifid: 'MERGE-IFID',
+				name: 'Merge Test',
+				twee: expect.stringContaining(':: StoryTitle')
+			}
+		);
+	});
+});
+
 // 폴링이 값싸게 유지되는 근거. 지문이 같으면 본문(twee)을 다시 받지 않는다.
 describe('remoteFingerprint', () => {
 	it('같은 목록이면 순서가 달라도 같은 값', () => {

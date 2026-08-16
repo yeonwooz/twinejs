@@ -49,9 +49,24 @@ export function validateTwee(twee: string): string[] {
 	} catch {
 		/* ignore */
 	}
+	// (set: $증거 to ) 처럼 값이 빠진 매크로. 재생할 때가 되어서야 Harlowe가
+	// "isn't valid Harlowe syntax for the inside of a macro call"로 터진다.
+	const emptyOperands = [
+		...twee.matchAll(
+			/\((?:set|put|if|unless|else-if):[^)]*?\b(?:to|into|is)\s*\)/g
+		)
+	].map(m => m[0]);
+
 	const problems: string[] = [];
-	if (missing.length) problems.push(`끊긴 링크: ${[...new Set(missing)].join(', ')}`);
-	if (!start || !titles.has(start)) problems.push(`StoryData.start "${start}" 구절 없음`);
+	if (missing.length)
+		problems.push(`끊긴 링크: ${[...new Set(missing)].join(', ')}`);
+	if (!start || !titles.has(start))
+		problems.push(`StoryData.start "${start}" 구절 없음`);
+	if (emptyOperands.length) {
+		problems.push(
+			`값이 빠진 매크로: ${[...new Set(emptyOperands)].join(', ')} — 값을 채우거나 그 매크로를 지워라`
+		);
+	}
 	return problems;
 }
 
@@ -222,7 +237,9 @@ async function translateOpenAI(
 	};
 }
 
-export async function translate(input: TranslateInput): Promise<TranslateResult> {
+export async function translate(
+	input: TranslateInput
+): Promise<TranslateResult> {
 	const system = readScript(
 		input.mode === 'scenario' ? 'scenario-prompt.md' : 'retro-prompt.md'
 	);

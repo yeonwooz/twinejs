@@ -2,9 +2,10 @@ import type {VercelRequest, VercelResponse} from '@vercel/node';
 import {getSession, writeSession} from '../_lib/session';
 import {ensureStoriesDb, searchPages} from '../_lib/notion';
 
-// GET: OAuth 동의 때 공유한 페이지 목록(회고 루트 후보).
-// POST {pageId}: 루트 선택 → 그 아래 stories DB 확보(없으면 생성) → 세션에 rootId·dbId 기록.
-// (dbId가 세션에 들어와야 sync가 활성화됨)
+// GET: OAuth 동의 때 공유한 페이지 목록(루트 후보).
+// POST {pageId}: 루트 선택 → 그 아래 stories DB 확보(없으면 생성) → 세션에
+// rootId·dbId 기록. 회고든 창작 시나리오든 이 DB 하나를 쓴다 — 나누는 기준은
+// 종류가 아니라 루트 페이지다. 예전에 쓰던 DB는 dbIds에 남겨 계속 읽는다.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const s = getSession(req);
 	if (!s?.token) {
@@ -20,7 +21,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		}
 		try {
 			const dbId = await ensureStoriesDb(s.token, pageId);
-			writeSession(res, {...s, rootId: pageId, dbId});
+			writeSession(res, {
+				...s,
+				rootId: pageId,
+				dbId,
+				dbIds: [...new Set([dbId, ...(s.dbIds ?? [])])]
+			});
 			res.status(200).json({ok: true});
 		} catch (error) {
 			res.status(502).json({error: (error as Error).message});
