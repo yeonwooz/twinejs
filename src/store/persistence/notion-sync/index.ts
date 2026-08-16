@@ -38,6 +38,15 @@ let enabled: boolean | undefined;
 let lastState: StoriesState = [];
 const pendingSyncs = new Map<string, number>();
 
+/**
+ * Forgets the cached status answer. Call after the user changes where stories
+ * are stored -- sync may have just been switched on, and the cached "disabled"
+ * would otherwise stand until a reload.
+ */
+export function forgetSyncStatus() {
+	enabled = undefined;
+}
+
 async function isEnabled() {
 	if (enabled === undefined) {
 		try {
@@ -168,6 +177,11 @@ export function notionSaveMiddleware(
 }
 
 export interface RemoteStoryMeta {
+	/**
+	 * The Notion database this row came from. Absent from older servers, and
+	 * that absence is meaningful -- see remotelyDeletedStoryIds.
+	 */
+	dbId?: string;
 	lastEdited: string | null;
 	lastSynced: string | null;
 	storyId: string;
@@ -287,19 +301,35 @@ export function mergeRemoteStories(
 // 삭제로 판단한다.
 const SYNCED_IDS_KEY = 'twine-notion-synced-stories';
 
-function readSyncedIds(): string[] {
+/** A story seen in a previous listing, and the database it was seen in. */
+export interface SyncedEntry {
+	dbId?: string;
+	storyId: string;
+}
+
+// 장부 한 줄은 "storyId:dbId"다. 둘 다 uuid라 콜론이 섞일 일이 없다. dbId가 없는
+// 줄은 이 형식 이전에(또는 dbId를 안 내려주는 서버에서) 적힌 것이다.
+function readSyncedEntries(): SyncedEntry[] {
 	try {
 		const raw = window.localStorage.getItem(SYNCED_IDS_KEY);
 
-		return raw ? raw.split(',').filter(Boolean) : [];
+		return (raw ? raw.split(',') : [])
+			.filter(Boolean)
+			.map(part => part.split(':'))
+			.map(([storyId, dbId]) => (dbId ? {storyId, dbId} : {storyId}));
 	} catch {
 		return [];
 	}
 }
 
-function writeSyncedIds(ids: string[]) {
+function writeSyncedEntries(entries: SyncedEntry[]) {
 	try {
-		window.localStorage.setItem(SYNCED_IDS_KEY, ids.join(','));
+		window.localStorage.setItem(
+			SYNCED_IDS_KEY,
+			entries
+				.map(({storyId, dbId}) => (dbId ? `${storyId}:${dbId}` : storyId))
+				.join(',')
+		);
 	} catch {
 		// 저장 못 해도 진행은 막지 않는다 — 다음 로드에서 삭제 판단만 보류된다.
 	}
@@ -309,18 +339,36 @@ function writeSyncedIds(ids: string[]) {
  * Local stories that were present in Notion last time we looked but are gone
  * now — i.e. deleted (or archived) on the Notion side.
  *
+ * Only stories from a database this listing actually covered can count as
+ * missing. The set of databases we read can shrink without anything being
+ * deleted -- a session expires, someone picks a different root page -- and
+ * without this scoping every story from the databases that dropped out would
+ * look deleted and be removed locally.
+ *
  * Pure so the irreversible half of this feature is testable: caller supplies
- * the ids it recorded previously.
+ * what it recorded previously.
  */
 export function remotelyDeletedStoryIds(
 	localStories: StoriesState,
 	remoteStories: RemoteStory[],
-	previouslySynced: string[]
+	previouslySynced: SyncedEntry[]
 ): string[] {
 	const remoteIds = new Set(remoteStories.map(r => r.storyId));
 	const localIds = new Set(localStories.map(s => s.id));
+	const scope = new Set(
+		remoteStories.map(r => r.dbId).filter((id): id is string => !!id)
+	);
 
-	return previouslySynced.filter(id => !remoteIds.has(id) && localIds.has(id));
+	return previouslySynced
+		.filter(
+			entry =>
+				// 서버가 dbId를 하나도 안 주면 범위를 알 수 없다. 그때는 예전처럼
+				// 목록 전체를 기준으로 판단한다.
+				(scope.size === 0 || (entry.dbId && scope.has(entry.dbId))) &&
+				!remoteIds.has(entry.storyId) &&
+				localIds.has(entry.storyId)
+		)
+		.map(entry => entry.storyId);
 }
 
 export interface MergeResult {
@@ -371,7 +419,7 @@ function applyRemoteStories(
 	// 원격 목록이 빈 채로 오는 건 "전부 지웠다"보다 설정 오류·API 이상일 가능성이
 	// 훨씬 높다. 삭제는 되돌릴 수 없으므로 그 경우엔 판단을 보류한다(장부도 그대로
 	// 둬서 다음 정상 응답에 다시 비교한다).
-	const synced = readSyncedIds();
+	const synced = readSyncedEntries();
 
 	if (remote.length === 0) {
 		if (synced.length > 0) {
@@ -384,7 +432,7 @@ function applyRemoteStories(
 
 	const deletedIds = remotelyDeletedStoryIds(localStories, remote, synced);
 
-	writeSyncedIds(remote.map(r => r.storyId));
+	writeSyncedEntries(remote.map(({storyId, dbId}) => ({storyId, dbId})));
 
 	return {
 		stories: deletedIds.length

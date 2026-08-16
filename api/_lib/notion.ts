@@ -182,6 +182,16 @@ export async function ensureStoriesDb(
 	return db.id;
 }
 
+// 저장 위치 고르기 화면에 보여줄 이름.
+export async function databaseTitle(token: string, dbId: string) {
+	const db = await notion(token, 'GET', `/databases/${dbId}`);
+
+	return (
+		(db.title ?? []).map((t: any) => t.plain_text ?? '').join('') ||
+		'(제목 없음)'
+	);
+}
+
 export interface RemoteStory {
 	storyId: string;
 	twee: string;

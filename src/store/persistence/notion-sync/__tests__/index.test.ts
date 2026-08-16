@@ -145,21 +145,27 @@ describe('remotelyDeletedStoryIds', () => {
 		localStory(TWEE, 'story-2', new Date(1000))
 	];
 
+	// dbId를 안 주는 서버(구버전 dev 미들웨어 등)에서는 목록 전체가 기준이다.
+	const seen = (...ids: string[]) => ids.map(storyId => ({storyId}));
+
 	it('원격에서 사라진, 전에 본 스토리를 삭제 대상으로 고른다', () => {
 		expect(
-			remotelyDeletedStoryIds(local, [fakeRemote({storyId: 'story-1'})], [
-				'story-1',
-				'story-2'
-			])
+			remotelyDeletedStoryIds(
+				local,
+				[fakeRemote({storyId: 'story-1'})],
+				seen('story-1', 'story-2')
+			)
 		).toEqual(['story-2']);
 	});
 
 	it('전에 본 적 없는 스토리는 원격에 없어도 건드리지 않는다', () => {
 		// 방금 로컬에서 만들어 아직 푸시되지 않은 스토리(3초 디바운스)가 이 경우다.
 		expect(
-			remotelyDeletedStoryIds(local, [fakeRemote({storyId: 'story-1'})], [
-				'story-1'
-			])
+			remotelyDeletedStoryIds(
+				local,
+				[fakeRemote({storyId: 'story-1'})],
+				seen('story-1')
+			)
 		).toEqual([]);
 	});
 
@@ -168,23 +174,61 @@ describe('remotelyDeletedStoryIds', () => {
 			remotelyDeletedStoryIds(
 				local,
 				[fakeRemote({storyId: 'story-1'}), fakeRemote({storyId: 'story-2'})],
-				['story-1', 'story-2']
+				seen('story-1', 'story-2')
 			)
 		).toEqual([]);
 	});
 
 	it('로컬에 이미 없는 id는 결과에 넣지 않는다', () => {
 		expect(
-			remotelyDeletedStoryIds(local, [fakeRemote({storyId: 'story-1'})], [
-				'story-1',
-				'story-2',
-				'story-gone-everywhere'
-			])
+			remotelyDeletedStoryIds(
+				local,
+				[fakeRemote({storyId: 'story-1'})],
+				seen('story-1', 'story-2', 'story-gone-everywhere')
+			)
 		).toEqual(['story-2']);
 	});
 
 	it('장부가 비어 있으면(첫 로드) 아무것도 삭제하지 않는다', () => {
 		expect(remotelyDeletedStoryIds(local, [], [])).toEqual([]);
+	});
+
+	// 세션이 만료돼 읽는 DB가 줄면, 빠진 DB의 스토리는 "사라진" 게 아니라 이번에
+	// 안 본 것이다. 여기서 구분하지 못하면 멀쩡한 스토리가 로컬에서 지워진다.
+	it('이번에 읽지 않은 DB의 스토리는 삭제 대상이 아니다', () => {
+		expect(
+			remotelyDeletedStoryIds(
+				local,
+				[fakeRemote({storyId: 'story-1', dbId: 'db-a'})],
+				[
+					{storyId: 'story-1', dbId: 'db-a'},
+					{storyId: 'story-2', dbId: 'db-b'}
+				]
+			)
+		).toEqual([]);
+	});
+
+	it('읽은 DB 안에서 사라진 스토리는 그대로 삭제 대상이다', () => {
+		expect(
+			remotelyDeletedStoryIds(
+				local,
+				[fakeRemote({storyId: 'story-1', dbId: 'db-a'})],
+				[
+					{storyId: 'story-1', dbId: 'db-a'},
+					{storyId: 'story-2', dbId: 'db-a'}
+				]
+			)
+		).toEqual(['story-2']);
+	});
+
+	it('DB를 모른 채 적힌 옛 장부는 한 번 건너뛴다 — 그 사이 장부가 다시 쓰인다', () => {
+		expect(
+			remotelyDeletedStoryIds(
+				local,
+				[fakeRemote({storyId: 'story-1', dbId: 'db-a'})],
+				seen('story-1', 'story-2')
+			)
+		).toEqual([]);
 	});
 });
 
@@ -193,7 +237,11 @@ describe('remotelyDeletedStoryIds', () => {
 describe('mergeStoriesFromNotion', () => {
 	const local = [localStory(TWEE, 'story-1', new Date(1000))];
 
-	async function load(routes: {status?: unknown; stories?: unknown; ok?: boolean}) {
+	async function load(routes: {
+		status?: unknown;
+		stories?: unknown;
+		ok?: boolean;
+	}) {
 		jest.resetModules();
 		(global as any).fetch = jest.fn(async (url: string) => {
 			if (String(url).endsWith('/status')) {
@@ -236,6 +284,28 @@ describe('mergeStoriesFromNotion', () => {
 		);
 	});
 
+	it('장부에 어느 DB에서 봤는지까지 적는다', async () => {
+		await load({stories: [fakeRemote({storyId: 'story-1', dbId: 'db-a'})]});
+
+		expect(window.localStorage.getItem('twine-notion-synced-stories')).toBe(
+			'story-1:db-a'
+		);
+	});
+
+	it('이번에 읽지 않은 DB의 스토리는 지우지 않는다', async () => {
+		window.localStorage.setItem(
+			'twine-notion-synced-stories',
+			'story-1:db-b,story-2:db-b'
+		);
+
+		const result = await load({
+			stories: [fakeRemote({storyId: 'story-2', dbId: 'db-a'})]
+		});
+
+		expect(result.deletedIds).toEqual([]);
+		expect(result.stories.map(s => s.id)).toContain('story-1');
+	});
+
 	it('요청이 실패하면 아무것도 건드리지 않는다', async () => {
 		window.localStorage.setItem('twine-notion-synced-stories', 'story-1');
 
@@ -262,7 +332,8 @@ describe('푸시 본문', () => {
 
 		const fetchMock = jest.fn(async (url: string, init?: RequestInit) => ({
 			ok: true,
-			json: async () => (String(url).endsWith('/status') ? {enabled: true} : []),
+			json: async () =>
+				String(url).endsWith('/status') ? {enabled: true} : [],
 			init
 		}));
 
@@ -289,13 +360,13 @@ describe('푸시 본문', () => {
 			String(url).includes('/stories/')
 		);
 
-		expect(call?.[1]?.body ? JSON.parse(String(call[1].body)) : undefined).toEqual(
-			{
-				ifid: 'MERGE-IFID',
-				name: 'Merge Test',
-				twee: expect.stringContaining(':: StoryTitle')
-			}
-		);
+		expect(
+			call?.[1]?.body ? JSON.parse(String(call[1].body)) : undefined
+		).toEqual({
+			ifid: 'MERGE-IFID',
+			name: 'Merge Test',
+			twee: expect.stringContaining(':: StoryTitle')
+		});
 	});
 });
 

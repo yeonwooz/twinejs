@@ -344,10 +344,15 @@ export function notionSync(): Plugin {
 						const rows = [];
 
 						for (const dbConfig of configs) {
+							// Each row carries the database it came from; the client uses
+							// that to scope its "deleted in Notion" check to the databases
+							// this listing actually covered.
+							const listed = meta
+								? await listStoryMeta(dbConfig)
+								: await listStories(dbConfig);
+
 							rows.push(
-								...(meta
-									? await listStoryMeta(dbConfig)
-									: await listStories(dbConfig))
+								...listed.map(row => ({...row, dbId: dbConfig.databaseId}))
 							);
 						}
 

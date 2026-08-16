@@ -20,11 +20,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		const rows = [];
 
 		for (const dbId of dbs) {
-			rows.push(
-				...(req.query.meta
-					? await listStoryMeta(s.token, dbId)
-					: await listStories(s.token, dbId))
-			);
+			// 행마다 어느 DB에서 왔는지 붙인다 — 클라가 "원격에서 삭제됨" 판정을 이번에
+			// 실제로 읽은 DB로 한정하는 데 쓴다(store/persistence/notion-sync).
+			const listed = req.query.meta
+				? await listStoryMeta(s.token, dbId)
+				: await listStories(s.token, dbId);
+
+			rows.push(...listed.map(row => ({...row, dbId})));
 		}
 
 		res.status(200).json(rows);
