@@ -3,14 +3,24 @@ import {getSession} from './_lib/session';
 import {resolveLlmKey} from './_lib/llm';
 import {addUsage, costUsd, resolveModel} from './_lib/models';
 import {
+	repairHarloweIdentifiers,
 	repairStartPassage,
 	stripEmptyMacros,
-	translate,
+	translate as translateRaw,
+	TranslateInput,
+	TranslateResult,
 	validateTwee,
 	WizardMode,
 	withCosmicUI,
 	withScenarioUI
 } from './_lib/translate';
+
+// 한글 변수명·본문 속 밑줄은 Harlowe가 재생할 때야 터지고, 고치는 방법이 기계적으로
+// 정해져 있다. 모델이 뭘 내놓든 검증 전에 코드로 갈아두면 경고도 재호출도 없다.
+async function translate(input: TranslateInput): Promise<TranslateResult> {
+	const result = await translateRaw(input);
+	return {...result, twee: repairHarloweIdentifiers(result.twee)};
+}
 
 // 초안 → twee 번역. LLM 키는 봉인 세션 쿠키(사용자 입력) 우선, 없으면 Notion 루트
 // 페이지 본문에서 서버측으로만 읽는다. 모델은 클라가 골라 보낸다(비밀 아님).

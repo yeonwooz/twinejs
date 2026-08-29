@@ -35,7 +35,8 @@ const OUTPUT_SCHEMA = {
 // (set: $증거 to ) 처럼 값이 빠진 매크로. 재생할 때가 되어서야 Harlowe가
 // "isn't valid Harlowe syntax for the inside of a macro call"로 터지므로,
 // 검증에서 잡고(validateTwee) 끝내 안 고쳐지면 지운다(stripEmptyMacros).
-const EMPTY_MACRO = /\((?:set|put|if|unless|else-if):[^)]*?\b(?:to|into|is)\s*\)/g;
+const EMPTY_MACRO =
+	/\((?:set|put|if|unless|else-if):[^)]*?\b(?:to|into|is)\s*\)/g;
 
 export function validateTwee(twee: string): string[] {
 	const titles = new Set(
@@ -55,6 +56,7 @@ export function validateTwee(twee: string): string[] {
 		/* ignore */
 	}
 	const emptyOperands = [...twee.matchAll(EMPTY_MACRO)].map(m => m[0]);
+	const badNames = findInvalidVarNames(twee);
 
 	const problems: string[] = [];
 	if (missing.length)
@@ -64,6 +66,11 @@ export function validateTwee(twee: string): string[] {
 	if (emptyOperands.length) {
 		problems.push(
 			`값이 빠진 매크로: ${[...new Set(emptyOperands)].join(', ')} — 값을 채우거나 그 매크로를 지워라`
+		);
+	}
+	if (badNames.length) {
+		problems.push(
+			`Harlowe가 못 읽는 변수 이름: ${badNames.join(', ')} — 변수명은 ASCII 영문·숫자·밑줄만 쓴다(본문 문장은 한글 그대로 두고 이름만 바꿔라)`
 		);
 	}
 	return problems;
@@ -99,6 +106,222 @@ export function repairStartPassage(twee: string): string {
 
 	data.start = narrative[0];
 	return twee.replace(sd[0], sd[1] + JSON.stringify(data, null, 2));
+}
+
+// ── Harlowe 식별자 보정 ─────────────────────────────────────────────────────
+// Harlowe의 변수 이름 패턴에는 한글이 없다(ASCII 영숫자·밑줄과 일부 라틴 확장뿐).
+// 그래서 `(set: $용기 to 0)`은 재생할 때가 되어서야
+// "$용기 to " isn't valid Harlowe syntax for the inside of a macro call
+// 으로 터진다. 값이 빠진 매크로와 같은 부류의 지연 실패라 같은 자리에서 코드로 때운다.
+// 이름만 로마자로 갈고 본문 문장은 한 글자도 건드리지 않는다.
+
+// 개정 로마자 표기의 뼈대만 따른다(연음·동화 규칙은 적용하지 않는다). 사람이 읽을 수
+// 있는 이름을 만드는 게 목적이지 표기법 준수가 목적이 아니다.
+const HANGUL_ONSETS = [
+	'g',
+	'kk',
+	'n',
+	'd',
+	'tt',
+	'r',
+	'm',
+	'b',
+	'pp',
+	's',
+	'ss',
+	'',
+	'j',
+	'jj',
+	'ch',
+	'k',
+	't',
+	'p',
+	'h'
+];
+const HANGUL_NUCLEI = [
+	'a',
+	'ae',
+	'ya',
+	'yae',
+	'eo',
+	'e',
+	'yeo',
+	'ye',
+	'o',
+	'wa',
+	'wae',
+	'oe',
+	'yo',
+	'u',
+	'wo',
+	'we',
+	'wi',
+	'yu',
+	'eu',
+	'ui',
+	'i'
+];
+const HANGUL_CODAS = [
+	'',
+	'k',
+	'k',
+	'k',
+	'n',
+	'n',
+	'n',
+	't',
+	'l',
+	'k',
+	'm',
+	'p',
+	't',
+	't',
+	'p',
+	'h',
+	'm',
+	'p',
+	'p',
+	't',
+	't',
+	'ng',
+	't',
+	't',
+	'k',
+	't',
+	'p',
+	't'
+];
+
+function romanize(name: string): string {
+	let out = '';
+	for (const ch of name) {
+		const code = ch.codePointAt(0)!;
+		if (code >= 0xac00 && code <= 0xd7a3) {
+			const s = code - 0xac00;
+			out +=
+				HANGUL_ONSETS[Math.floor(s / 588)] +
+				HANGUL_NUCLEI[Math.floor((s % 588) / 28)] +
+				HANGUL_CODAS[s % 28];
+		} else if (/[A-Za-z0-9_]/.test(ch)) {
+			out += ch;
+		}
+	}
+	return out;
+}
+
+// twee 안의 `$변수`·`_임시변수` 토큰. 앞에 낱말 글자가 붙은 밑줄은 변수가 아니라 본문
+// 속 밑줄이므로(Q4_final_real) 여기서 잡지 않는다 — escapeProseUnderscores 담당.
+const VAR_TOKEN = /(?<![\p{L}\p{N}_])([$_])([\p{L}\p{N}_]+)/gu;
+
+const ASCII_VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+// 이름이 숫자로 시작하면 Harlowe도 변수로 읽지 않는다(본문의 `$500원` 같은 금액 표기).
+function isVarName(name: string): boolean {
+	return !/^\d/.test(name);
+}
+
+// Harlowe가 못 읽는 변수 이름들. 검증 메시지와 보정이 같은 판단을 쓰도록 함수로 뺀다.
+export function findInvalidVarNames(twee: string): string[] {
+	const bad = new Set<string>();
+	for (const m of twee.matchAll(VAR_TOKEN)) {
+		if (!ASCII_VAR_NAME.test(m[2]) && isVarName(m[2])) bad.add(m[1] + m[2]);
+	}
+	return [...bad];
+}
+
+export function romanizeVariableNames(twee: string): string {
+	const taken = new Set<string>();
+	for (const m of twee.matchAll(VAR_TOKEN)) {
+		if (ASCII_VAR_NAME.test(m[2])) taken.add(m[2]);
+	}
+
+	// 같은 이름은 어디서나 같은 이름으로 바뀌어야 한다 — 표를 먼저 만들고 나서 치환한다.
+	const renames = new Map<string, string>();
+	for (const m of twee.matchAll(VAR_TOKEN)) {
+		const name = m[2];
+		if (ASCII_VAR_NAME.test(name) || !isVarName(name) || renames.has(name))
+			continue;
+		let base = romanize(name);
+		if (!/^[A-Za-z_]/.test(base)) base = 'v' + base;
+		let next = base;
+		for (let i = 2; taken.has(next); i++) next = `${base}${i}`;
+		taken.add(next);
+		renames.set(name, next);
+	}
+	if (!renames.size) return twee;
+
+	return twee.replace(VAR_TOKEN, (whole, sigil: string, name: string) =>
+		renames.has(name) ? sigil + renames.get(name) : whole
+	);
+}
+
+// 사용자 영역 문자 — 이야기 본문에 나올 일이 없어 자리표시자로 안전하다.
+const MASK = '\uE000';
+
+// 매크로 호출 안은 코드다. `(go-to: "chapter_1")`의 밑줄을 이스케이프하면 링크가
+// 죽으므로 밑줄 처리에서 통째로 빼둔다(문자열 안의 괄호는 세지 않는다).
+
+function maskMacroCalls(text: string): {masked: string; parts: string[]} {
+	const parts: string[] = [];
+	let out = '';
+	let i = 0;
+	while (i < text.length) {
+		if (
+			text[i] === '(' &&
+			/^\([A-Za-z][\w-]*\s*:/.test(text.slice(i, i + 40))
+		) {
+			let depth = 0;
+			let quote = '';
+			let j = i;
+			for (; j < text.length; j++) {
+				const c = text[j];
+				if (quote) {
+					if (c === quote) quote = '';
+					continue;
+				}
+				if (c === '"' || c === "'") quote = c;
+				else if (c === '(') depth++;
+				else if (c === ')' && --depth === 0) {
+					j++;
+					break;
+				}
+			}
+			parts.push(text.slice(i, j));
+			out += `${MASK}${parts.length - 1}${MASK}`;
+			i = j;
+		} else {
+			out += text[i];
+			i++;
+		}
+	}
+	return {masked: out, parts};
+}
+
+// 본문에 `Q4_final_real`·`대조_v7`처럼 낱말 뒤에 밑줄이 붙으면 Harlowe가 `_final_real`을
+// 임시변수 참조로 읽고 "There isn't a temp variable named _final_real in this place."로 터진다.
+// 그 밑줄만 `&#95;`로 바꾼다 — 화면에는 똑같이 `_`로 보이므로, 혹시 변수가 아닌 곳을
+// 건드려도 읽는 사람에게는 차이가 없다.
+export function escapeProseUnderscores(twee: string): string {
+	const {masked, parts} = maskMacroCalls(twee);
+	const escaped = masked.replace(
+		// 앞의 세 갈래는 통째로 지나칠 것들(구절 제목 줄, 링크, 정상 변수 토큰)이고
+		// 마지막 갈래만 실제로 바꾼다.
+		// 밑줄 앞 글자는 한글일 수도 있다 — `대조_v7`도 Harlowe에는 `_v7` 참조로 보이므로
+		// 자릿수 판단에 \w(ASCII 전용)를 쓰면 놓친다. 유니코드 글자·숫자로 본다.
+		/^:: .*$|\[\[[^\]]*\]\]|\$[A-Za-z_]\w*|(?<![\p{L}\p{N}])_[A-Za-z]\w*|([\p{L}\p{N}])_(?=[A-Za-z_])/gmu,
+		(whole, before?: string) =>
+			before === undefined ? whole : `${before}&#95;`
+	);
+	return escaped.replace(
+		new RegExp(`${MASK}(\\d+)${MASK}`, 'g'),
+		(_, n: string) => parts[+n]
+	);
+}
+
+// LLM 재호출 없이 확실히 고칠 수 있는 Harlowe 식별자 문제를 코드로 먼저 때운다.
+// 판단이 필요한 보정(끊긴 링크 등)은 여기서 하지 않는다.
+export function repairHarloweIdentifiers(twee: string): string {
+	return escapeProseUnderscores(romanizeVariableNames(twee));
 }
 
 function withThemeUI(twee: string, stylesheetFile: string): string {
@@ -195,7 +418,9 @@ async function translateAnthropic(
 		.map(b => b.text)
 		.join('');
 	if (!text) {
-		throw new Error('모델이 빈 응답을 반환했어요(정책 거부 등). 다른 모델을 시도해 주세요.');
+		throw new Error(
+			'모델이 빈 응답을 반환했어요(정책 거부 등). 다른 모델을 시도해 주세요.'
+		);
 	}
 	const u = response.usage;
 	return {
