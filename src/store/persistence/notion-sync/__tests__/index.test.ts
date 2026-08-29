@@ -537,3 +537,98 @@ describe('pullRemoteChanges', () => {
 		}
 	});
 });
+
+// fetch는 404나 502에도 정상 resolve한다. 상태를 안 보던 시절에는 실패가 성공과
+// 구별되지 않아 console.warn조차 찍히지 않았고, 스토리가 안 올라가는데 화면은
+// 멀쩡했다. 이제 실패가 상태로 남아 툴바에 뜬다.
+describe('동기화 상태', () => {
+	// 모듈이 상태를 들고 있으므로 테스트마다 새로 불러온다.
+	async function syncOnce(put: {
+		ok: boolean;
+		status?: number;
+		json?: () => any;
+	}) {
+		jest.resetModules();
+		jest.useFakeTimers();
+
+		(global as any).fetch = jest.fn(async (url: string, init?: RequestInit) => {
+			if (String(url).endsWith('/status')) {
+				return {ok: true, json: async () => ({connected: true, enabled: true})};
+			}
+
+			if (init?.method === 'PUT') {
+				return {
+					status: 200,
+					json: async () => ({ok: true}),
+					...put
+				};
+			}
+
+			return {ok: true, json: async () => []};
+		});
+
+		const mod = await import('..');
+		const story = localStory(TWEE, 'story-1', new Date(1000));
+
+		mod.notionSaveMiddleware([story], {
+			props: {},
+			storyId: story.id,
+			type: 'updateStory'
+		} as any);
+
+		await jest.advanceTimersByTimeAsync(5000);
+		jest.useRealTimers();
+
+		return mod.syncStatus();
+	}
+
+	it('성공하면 켜진 상태로 남고 실패 표시가 없다', async () => {
+		const status = await syncOnce({ok: true});
+
+		expect(status).toEqual({
+			connected: true,
+			enabled: true,
+			failing: false,
+			reason: undefined
+		});
+	});
+
+	it('PUT이 404로 돌아오면 실패로 잡고 서버가 준 이유를 남긴다', async () => {
+		const status = await syncOnce({
+			ok: false,
+			status: 404,
+			json: async () => ({error: '노션에서 DB를 찾지 못했습니다'})
+		});
+
+		expect(status.failing).toBe(true);
+		expect(status.reason).toBe('노션에서 DB를 찾지 못했습니다');
+	});
+
+	it('서버가 이유를 안 주면 상태 코드라도 남긴다', async () => {
+		const status = await syncOnce({
+			ok: false,
+			status: 502,
+			json: async () => {
+				throw new Error('not json');
+			}
+		});
+
+		expect(status.reason).toBe('노션 저장 실패 (502)');
+	});
+
+	it('구독자에게 상태 변화를 알린다', async () => {
+		jest.resetModules();
+
+		const mod = await import('..');
+		const listener = jest.fn();
+		const stop = mod.onSyncStatusChange(listener);
+
+		mod.forgetSyncStatus();
+		expect(listener).toHaveBeenCalledWith({
+			connected: false,
+			enabled: false,
+			failing: false
+		});
+		stop();
+	});
+});

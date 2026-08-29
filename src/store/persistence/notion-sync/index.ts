@@ -39,12 +39,48 @@ let lastState: StoriesState = [];
 const pendingSyncs = new Map<string, number>();
 
 /**
+ * 동기화가 지금 어떤 상태인지. 콘솔에만 남기면 아무도 안 본다 -- 저장 위치가 안
+ * 정해져 꺼져 있던 것, 통합 권한이 없어 쓰기가 404로 실패한 것, 스토리가 엉뚱한 DB로
+ * 들어간 것이 모두 조용히 지나갔다. 화면에 띄우려면 상태를 들고 있어야 한다.
+ */
+export interface SyncStatus {
+	/** 노션에 로그인돼 있나. */
+	connected: boolean;
+	/** 동기화가 돌 수 있는 상태인가. */
+	enabled: boolean;
+	/** 마지막 저장이 실패했고 그 뒤로 성공이 없나. */
+	failing: boolean;
+	/** 꺼졌거나 실패한 이유. 사용자에게 그대로 보여준다. */
+	reason?: string;
+}
+
+const UNKNOWN: SyncStatus = {connected: false, enabled: false, failing: false};
+
+let status: SyncStatus = UNKNOWN;
+const statusListeners = new Set<(status: SyncStatus) => void>();
+
+function setStatus(patch: Partial<SyncStatus>) {
+	status = {...status, ...patch};
+	statusListeners.forEach(listener => listener(status));
+}
+
+export function syncStatus() {
+	return status;
+}
+
+export function onSyncStatusChange(listener: (status: SyncStatus) => void) {
+	statusListeners.add(listener);
+	return () => statusListeners.delete(listener);
+}
+
+/**
  * Forgets the cached status answer. Call after the user changes where stories
  * are stored -- sync may have just been switched on, and the cached "disabled"
  * would otherwise stand until a reload.
  */
 export function forgetSyncStatus() {
 	enabled = undefined;
+	setStatus(UNKNOWN);
 }
 
 async function isEnabled() {
@@ -52,17 +88,22 @@ async function isEnabled() {
 		// 꺼진 이유가 있으면 함께 남긴다. 저장 위치는 서버가 기본값으로 정해주므로
 		// 여기까지 와서 꺼졌다면 이유가 따로 있다(공유된 페이지가 없는 등).
 		let reason: string | undefined;
+		let connected = false;
 
 		try {
 			const response = await fetch('/__notion-sync/status');
-			const status = response.ok ? await response.json() : undefined;
+			const body = response.ok ? await response.json() : undefined;
 
-			enabled = status?.enabled === true;
-			reason = status?.error;
+			enabled = body?.enabled === true;
+			reason = body?.error;
+			// dev 서버 미들웨어는 connected를 주지 않는다 -- .env가 정하므로 로그인
+			// 개념이 없다. 그때는 enabled 자체를 연결로 본다.
+			connected = body?.connected ?? enabled;
 		} catch {
 			enabled = false;
 		}
 
+		setStatus({connected, enabled, reason, failing: false});
 		console.info(
 			`Notion sync is ${enabled ? 'enabled' : 'disabled'}${
 				reason ? ` -- ${reason}` : ''
@@ -71,6 +112,21 @@ async function isEnabled() {
 	}
 
 	return enabled;
+}
+
+/** 서버가 돌려준 이유를 꺼낸다. 없으면 상태 코드라도 보여준다. */
+async function errorOf(response: Response) {
+	try {
+		const body = await response.json();
+
+		if (body?.error) {
+			return String(body.error);
+		}
+	} catch {
+		// JSON이 아니면 상태 코드만 쓴다.
+	}
+
+	return `노션 저장 실패 (${response.status})`;
 }
 
 async function syncStory(storyId: string) {
@@ -88,16 +144,34 @@ async function syncStory(storyId: string) {
 	}
 
 	try {
-		await fetch(`/__notion-sync/stories/${encodeURIComponent(storyId)}`, {
-			method: 'PUT',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({
-				ifid: story.ifid,
-				name: story.name,
-				twee: storyToTwee(story)
-			})
-		});
+		const response = await fetch(
+			`/__notion-sync/stories/${encodeURIComponent(storyId)}`,
+			{
+				method: 'PUT',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({
+					ifid: story.ifid,
+					name: story.name,
+					twee: storyToTwee(story)
+				})
+			}
+		);
+
+		// fetch는 404나 502에도 정상 resolve한다. 상태를 안 보면 실패가 성공과
+		// 구별되지 않고, 예전에는 console.warn조차 찍히지 않았다.
+		if (!response.ok) {
+			const reason = await errorOf(response);
+
+			setStatus({failing: true, reason});
+			console.warn(`Notion sync of story ${storyId} failed: ${reason}`);
+			return;
+		}
+
+		setStatus({failing: false, reason: undefined});
 	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+
+		setStatus({failing: true, reason});
 		console.warn(`Notion sync of story ${storyId} failed`, error);
 	}
 }

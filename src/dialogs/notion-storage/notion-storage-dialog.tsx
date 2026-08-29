@@ -13,6 +13,7 @@ import {CardContent} from '../../components/container/card';
 import {DialogCard} from '../../components/container/dialog-card';
 import {IconButton} from '../../components/control/icon-button';
 import {forgetSyncStatus} from '../../store/persistence/notion-sync';
+import {useSyncStatus} from '../../store/persistence/notion-sync/use-sync-status';
 import {DialogComponentProps} from '../dialogs.types';
 import './notion-storage-dialog.css';
 
@@ -69,6 +70,7 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 	const [choice, setChoice] = React.useState<string>();
 	const [error, setError] = React.useState<string>();
 	const [busy, setBusy] = React.useState(false);
+	const sync = useSyncStatus();
 
 	React.useEffect(() => {
 		let cancelled = false;
@@ -131,6 +133,16 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 		>
 			<CardContent>
 				{error && <p className="storage-error">{error}</p>}
+				{/* 동기화가 꺼졌거나 실패한 이유. 툴바 버튼은 "저장 실패"까지만 말할 수
+				    있으니, 고치러 온 이 화면에서 무엇이 문제였는지 그대로 보여준다. */}
+				{!error && sync.reason && (
+					<p className="storage-error">
+						{sync.failing
+							? '마지막 저장이 실패했습니다: '
+							: '동기화가 꺼져 있습니다: '}
+						{sync.reason}
+					</p>
+				)}
 				{!info && !error && <p>불러오는 중…</p>}
 				{info && (
 					<>
