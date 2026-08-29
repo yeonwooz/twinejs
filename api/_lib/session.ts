@@ -28,6 +28,9 @@ export interface Session {
 	dbIds?: string[];
 	// 루트 페이지 id (위저드에서 고름).
 	rootId?: string;
+	// 이 루트를 사용자가 고른 게 아니라 앱이 기본값으로 정했나. 기본값이면 저장 위치를
+	// 한 번 알려줘야 한다 — 어디에 쌓이는지 모른 채 쓰게 두지 않는다.
+	autoRoot?: boolean;
 	workspaceName?: string;
 	// LLM API 키(사용자가 앱에서 입력). Notion 토큰과 동일하게 이 봉인 쿠키에만 담긴다
 	// — 평문으로 Notion 페이지/클라 JS/서버 DB 어디에도 남기지 않는다.

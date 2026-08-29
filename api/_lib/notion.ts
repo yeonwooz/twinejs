@@ -326,6 +326,26 @@ function titleOf(page: any): string {
 	return page?.child_page?.title ?? '';
 }
 
+// 워크스페이스에서 stories DB를 이름으로 바로 찾는다. 페이지를 타고 내려가는
+// findStoriesDb는 콜아웃 한 겹까지만 보므로, 사용자가 노션에서 DB를 더 깊이 정리해
+// 두면 "없다"고 판단해 같은 이름의 빈 DB를 또 만든다. 검색은 깊이와 무관하다.
+// 노션 검색은 최근 편집 순이라, 여러 개면 가장 최근에 쓴 DB가 앞에 온다.
+export async function searchStoriesDbs(token: string) {
+	const res = await notion(token, 'POST', '/search', {
+		filter: {property: 'object', value: 'database'},
+		page_size: 100
+	});
+
+	return res.results
+		.map((d: any) => ({
+			id: d.id,
+			archived: d.archived,
+			title: (d.title ?? []).map((x: any) => x.plain_text ?? '').join('')
+		}))
+		.filter((d: any) => d.id && !d.archived && isStoriesDb(d.title))
+		.map(({id, title}: any) => ({id, title}));
+}
+
 // OAuth 동의 때 공유된 페이지들(회고 루트 후보).
 export async function searchPages(token: string) {
 	const res = await notion(token, 'POST', '/search', {

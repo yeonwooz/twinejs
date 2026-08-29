@@ -49,15 +49,25 @@ export function forgetSyncStatus() {
 
 async function isEnabled() {
 	if (enabled === undefined) {
+		// 꺼진 이유가 있으면 함께 남긴다. 저장 위치는 서버가 기본값으로 정해주므로
+		// 여기까지 와서 꺼졌다면 이유가 따로 있다(공유된 페이지가 없는 등).
+		let reason: string | undefined;
+
 		try {
 			const response = await fetch('/__notion-sync/status');
+			const status = response.ok ? await response.json() : undefined;
 
-			enabled = response.ok && (await response.json()).enabled === true;
+			enabled = status?.enabled === true;
+			reason = status?.error;
 		} catch {
 			enabled = false;
 		}
 
-		console.info(`Notion sync is ${enabled ? 'enabled' : 'disabled'}`);
+		console.info(
+			`Notion sync is ${enabled ? 'enabled' : 'disabled'}${
+				reason ? ` -- ${reason}` : ''
+			}`
+		);
 	}
 
 	return enabled;
@@ -362,9 +372,11 @@ export function remotelyDeletedStoryIds(
 	return previouslySynced
 		.filter(
 			entry =>
-				// 서버가 dbId를 하나도 안 주면 범위를 알 수 없다. 그때는 예전처럼
-				// 목록 전체를 기준으로 판단한다.
-				(scope.size === 0 || (entry.dbId && scope.has(entry.dbId))) &&
+				// 서버가 dbId를 하나도 안 주면 범위를 알 수 없다. 이 폴백은 dbId를 안 보내던
+				// 구버전 서버를 위한 것이므로, 장부에 dbId가 있는 항목에는 적용하지 않는다.
+				// 원격 목록이 빈 것(DB를 못 찾음, 방금 만든 빈 DB)과 "정말 지워졌다"를
+				// 구분할 수 없는데, 틀렸을 때 되돌릴 수 없는 쪽은 삭제다.
+				(scope.size === 0 ? !entry.dbId : scope.has(entry.dbId!)) &&
 				!remoteIds.has(entry.storyId) &&
 				localIds.has(entry.storyId)
 		)

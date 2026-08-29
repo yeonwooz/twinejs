@@ -195,6 +195,21 @@ describe('remotelyDeletedStoryIds', () => {
 
 	// 세션이 만료돼 읽는 DB가 줄면, 빠진 DB의 스토리는 "사라진" 게 아니라 이번에
 	// 안 본 것이다. 여기서 구분하지 못하면 멀쩡한 스토리가 로컬에서 지워진다.
+	// 기본 저장 위치를 새로 정하면 빈 DB를 읽을 수 있다. 그때 원격 목록은 비지만
+	// 장부에는 예전 DB가 적혀 있다 — 못 본 것이지 지워진 게 아니다.
+	it('원격 목록이 비어도 장부에 DB가 적혀 있으면 지우지 않는다', () => {
+		expect(
+			remotelyDeletedStoryIds(
+				local,
+				[],
+				[
+					{storyId: 'story-1', dbId: 'db-a'},
+					{storyId: 'story-2', dbId: 'db-a'}
+				]
+			)
+		).toEqual([]);
+	});
+
 	it('이번에 읽지 않은 DB의 스토리는 삭제 대상이 아니다', () => {
 		expect(
 			remotelyDeletedStoryIds(

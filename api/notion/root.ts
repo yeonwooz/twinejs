@@ -25,7 +25,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 				...s,
 				rootId: pageId,
 				dbId,
-				dbIds: [...new Set([dbId, ...(s.dbIds ?? [])])]
+				dbIds: [...new Set([dbId, ...(s.dbIds ?? [])])],
+				// 사용자가 직접 골랐으니 더는 기본값이 아니다(status의 chosen이 이걸 본다).
+				autoRoot: false
 			});
 			res.status(200).json({ok: true});
 		} catch (error) {
