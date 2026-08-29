@@ -158,6 +158,54 @@ export async function findStoriesDb(
 		if (nested) return nested.id;
 	}
 
+	// 블록을 타고 내려가는 것만으로는 한계가 있다 — 페이지 안의 페이지, 콜아웃 안의
+	// 페이지처럼 조합이 끝이 없다. 반대로 올라가면 깊이와 무관하게 판정된다.
+	return findStoriesDbUnder(token, parentPageId);
+}
+
+// 조상 사슬을 몇 번까지 거슬러 올라갈지. 노션 DB의 parent는 페이지일 수도 있고
+// (콜아웃 안에 인라인으로 박혀 있으면) 블록일 수도 있어서 둘 다 따라간다.
+const ANCESTOR_HOPS = 6;
+
+async function isUnderPage(token: string, id: string, pageId: string) {
+	const target = toNotionId(pageId);
+	let cursor: {type: string; id: string} | undefined = {type: 'db', id};
+
+	for (let hop = 0; cursor && hop < ANCESTOR_HOPS; hop++) {
+		const path =
+			cursor.type === 'db'
+				? `/databases/${cursor.id}`
+				: cursor.type === 'page'
+					? `/pages/${cursor.id}`
+					: `/blocks/${cursor.id}`;
+		const node: any = await notion(token, 'GET', path).catch(() => undefined);
+		const parent = node?.parent;
+
+		if (!parent) return false;
+		if (parent.page_id && toNotionId(parent.page_id) === target) return true;
+		if (parent.block_id && toNotionId(parent.block_id) === target) return true;
+
+		cursor = parent.page_id
+			? {type: 'page', id: parent.page_id}
+			: parent.block_id
+				? {type: 'block', id: parent.block_id}
+				: undefined;
+	}
+
+	return false;
+}
+
+// 그 페이지 밑에 이미 있는 stories DB. 워크스페이스 검색으로 후보를 모으고 조상
+// 사슬로 소속을 판정하므로, DB가 몇 겹 아래 있든 콜아웃 안에 있든 찾아낸다.
+// 이걸 안 하면 "이 페이지 아래에 새로 만들기"가 멀쩡한 DB 옆에 빈 DB를 또 만든다.
+export async function findStoriesDbUnder(
+	token: string,
+	pageId: string
+): Promise<string | undefined> {
+	for (const db of await searchStoriesDbs(token)) {
+		if (await isUnderPage(token, db.id, pageId)) return db.id;
+	}
+
 	return undefined;
 }
 

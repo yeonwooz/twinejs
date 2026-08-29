@@ -1,7 +1,6 @@
 import type {VercelRequest, VercelResponse} from '@vercel/node';
 import {getSession, writeSession} from '../_lib/session';
 import {ensureStoriesDb, searchPages, searchStoriesDbs} from '../_lib/notion';
-import {currentDb} from '../_lib/stories-db';
 
 // 저장 위치 고르기 화면(src/dialogs/notion-storage)이 쓰는 엔드포인트. 저장 위치는
 // 한 곳뿐이라 고르는 것도 하나다.
@@ -48,13 +47,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			searchPages(s.token)
 		]);
 
+		// 읽기 경로에서는 DB를 만들지도 정하지도 않는다. 이 화면을 열었다는 이유로
+		// 노션에 빈 DB가 생기던 적이 있었다 — 여는 것은 부작용이 없어야 한다.
 		res.status(200).json({
 			options,
 			pages,
-			// 아직 없으면 여기서 정해진다 — 화면에 "지금 여기 저장됩니다"를 띄우려면
-			// 빈 값이 아니라 실제 위치를 알려줘야 한다.
-			selected: await currentDb(s, res).catch(() => null),
-			isDefault: !!s.autoRoot
+			selected: s.dbId ?? options[0]?.id ?? null,
+			isDefault: !!s.autoRoot || !s.dbId
 		});
 	} catch (error) {
 		res.status(502).json({error: (error as Error).message});
