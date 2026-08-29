@@ -6,6 +6,7 @@
 import {
 	escapeProseUnderscores,
 	findInvalidVarNames,
+	passageTitle,
 	repairHarloweIdentifiers,
 	repairStartPassage,
 	romanizeVariableNames,
@@ -40,6 +41,48 @@ describe('validateTwee', () => {
 		const twee = `${HEAD}\n:: 시작\n(set: $evidence to true, $hand to it + 1)(if: $evidence is not false)[네]\n`;
 
 		expect(validateTwee(twee)).toEqual([]);
+	});
+});
+
+// Twine에서 내보낸 twee는 제목 줄에 position/size가 붙는다. 안 벗기면 멀쩡한 구절이
+// 전부 "끊긴 링크"로 잡혀 쓸데없는 LLM 재보정을 부르고, start까지 망가진다.
+describe('구절 제목의 메타데이터', () => {
+	const twee = [
+		':: StoryTitle',
+		'메타데이터 테스트',
+		'',
+		':: StoryData',
+		'{"ifid":"X","format":"Harlowe","format-version":"3.3.9","start":"출발"}',
+		'',
+		':: 출발 {"position":"150,100","size":"100,100"}',
+		'[[다음으로->도착]]',
+		'',
+		':: 도착 [끝] {"position":"150,300","size":"100,100"}',
+		'끝.',
+		''
+	].join('\n');
+
+	it('position이 붙은 제목도 링크 대상으로 알아본다', () => {
+		expect(validateTwee(twee)).toEqual([]);
+	});
+
+	it('태그와 메타데이터를 함께 벗긴다', () => {
+		expect(passageTitle('도착 [끝] {"position":"1,2"}')).toBe('도착');
+		expect(passageTitle('Story Stylesheet [stylesheet]')).toBe(
+			'Story Stylesheet'
+		);
+		expect(passageTitle('제목 그대로')).toBe('제목 그대로');
+	});
+
+	it('멀쩡한 twee의 start를 건드리지 않는다', () => {
+		expect(repairStartPassage(twee)).toBe(twee);
+	});
+
+	// 문법을 설명하는 구절의 백틱 예시는 링크가 아니다.
+	it('백틱 안의 링크 예시는 끊긴 링크로 세지 않는다', () => {
+		const doc = `${HEAD}\n:: 시작\n링크는 \`[[보이는 글->문단 이름]]\` 꼴이다.\n`;
+
+		expect(validateTwee(doc)).toEqual([]);
 	});
 });
 

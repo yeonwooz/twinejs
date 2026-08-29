@@ -1,13 +1,12 @@
 import type {VercelRequest, VercelResponse} from '@vercel/node';
 import {getSession} from '../../_lib/session';
 import {archiveStory, upsertStory} from '../../_lib/notion';
-import {allDbs, homeDb} from '../../_lib/stories-db';
+import {currentDb} from '../../_lib/stories-db';
 
 // PUT   /__notion-sync/stories/:id  {ifid,name,twee} → upsert (Story ID로 매칭)
 // DELETE /__notion-sync/stories/:id                  → archive
 //
-// 저장은 지금 고른 루트의 DB에. 삭제는 어느 루트에서 만든 스토리인지 알 수 없으므로
-// (이미 로컬에서 사라진 뒤다) 이 세션이 아는 DB를 모두 뒤진다.
+// 저장 위치는 한 곳이므로 저장도 삭제도 그 DB 하나만 본다.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const s = getSession(req);
 	if (!s?.token || !(s.dbId || s.rootId)) {
@@ -29,16 +28,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 				res.status(400).json({error: 'twee 누락'});
 				return;
 			}
-			await upsertStory(s.token, await homeDb(s, storyId, res), storyId, {
+			await upsertStory(s.token, await currentDb(s, res), storyId, {
 				ifid: body.ifid,
 				name: body.name,
 				twee: body.twee
 			});
 			res.status(200).json({ok: true});
 		} else if (req.method === 'DELETE') {
-			for (const dbId of await allDbs(s, res)) {
-				await archiveStory(s.token, dbId, storyId);
-			}
+			await archiveStory(s.token, await currentDb(s, res), storyId);
 			res.status(200).json({ok: true});
 		} else {
 			res.status(405).json({error: 'method not allowed'});

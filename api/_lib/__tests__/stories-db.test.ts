@@ -84,7 +84,6 @@ describe('currentDb', () => {
 
 		expect(await currentDb(s)).toBe('db-found');
 		expect(s.dbId).toBe('db-found');
-		expect(s.dbIds).toEqual(['db-found']);
 		expect(s.autoRoot).toBe(true);
 	});
 });

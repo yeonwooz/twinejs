@@ -189,9 +189,14 @@ async function upsertStory(
 			await notionRequest(config, 'DELETE', `/blocks/${block.id}`);
 		}
 
-		await notionRequest(config, 'PATCH', `/blocks/${existingPage.id}/children`, {
-			children: tweeToCodeBlocks(twee)
-		});
+		await notionRequest(
+			config,
+			'PATCH',
+			`/blocks/${existingPage.id}/children`,
+			{
+				children: tweeToCodeBlocks(twee)
+			}
+		);
 	} else {
 		await notionRequest(config, 'POST', '/pages', {
 			parent: {database_id: config.databaseId},
@@ -268,48 +273,27 @@ export function notionSync(): Plugin {
 		apply: 'serve',
 		configureServer(server) {
 			const env = loadEnv(server.config.mode, server.config.root, '');
-			// NOTION_STORIES_DB_ID may list several databases, comma separated --
-			// one per Notion root page you keep stories under. New stories go to the
-			// first; every one of them is read and searched on delete. (The deployed
-			// app gets the same list from the session instead; see
-			// api/_lib/stories-db.ts.)
+			// Stories live in exactly one database -- see api/_lib/stories-db.ts for
+			// why the multi-database model went away. A comma separated list is still
+			// accepted so older .env.local files keep working, but only the first id
+			// is used and the rest are called out.
 			const databaseIds = (env.NOTION_STORIES_DB_ID ?? '')
 				.split(',')
 				.map(id => id.trim())
 				.filter(Boolean);
-			const configs: NotionSyncConfig[] = env.NOTION_TOKEN
-				? databaseIds.map(databaseId => ({
-						databaseId,
-						token: env.NOTION_TOKEN
-					}))
-				: [];
-			const config = configs[0];
+			const config: NotionSyncConfig | undefined =
+				env.NOTION_TOKEN && databaseIds[0]
+					? {databaseId: databaseIds[0], token: env.NOTION_TOKEN}
+					: undefined;
 
 			if (!config) {
 				server.config.logger.warn(
 					'[notion-sync] NOTION_TOKEN and/or NOTION_STORIES_DB_ID not set in .env.local; sync is disabled'
 				);
-			} else if (configs.length > 1) {
-				server.config.logger.info(
-					`[notion-sync] reading ${configs.length} databases; new stories go to the first`
+			} else if (databaseIds.length > 1) {
+				server.config.logger.warn(
+					`[notion-sync] NOTION_STORIES_DB_ID lists ${databaseIds.length} databases; only the first is used (${databaseIds[0]}). Storage is a single database now -- drop the rest.`
 				);
-			}
-
-			// With more than one database configured, an existing story has to be
-			// updated where it already lives -- otherwise editing a story pulled
-			// from the second database would leave a copy in the first.
-			async function firstConfigWithStory(storyId: string) {
-				if (configs.length < 2) {
-					return undefined;
-				}
-
-				for (const dbConfig of configs) {
-					if (await findPageByStoryId(dbConfig, storyId)) {
-						return dbConfig;
-					}
-				}
-
-				return undefined;
 			}
 
 			server.middlewares.use(async (req, res, next) => {
@@ -341,22 +325,17 @@ export function notionSync(): Plugin {
 					) {
 						// ?meta=1 is the cheap poll: timestamps without twee bodies.
 						const meta = !!url.searchParams.get('meta');
-						const rows = [];
+						// Each row carries the database it came from; the client uses that
+						// to scope its "deleted in Notion" check to what this listing
+						// actually covered, so switching databases can't wipe local copies.
+						const listed = meta
+							? await listStoryMeta(config)
+							: await listStories(config);
 
-						for (const dbConfig of configs) {
-							// Each row carries the database it came from; the client uses
-							// that to scope its "deleted in Notion" check to the databases
-							// this listing actually covered.
-							const listed = meta
-								? await listStoryMeta(dbConfig)
-								: await listStories(dbConfig);
-
-							rows.push(
-								...listed.map(row => ({...row, dbId: dbConfig.databaseId}))
-							);
-						}
-
-						return respond(200, rows);
+						return respond(
+							200,
+							listed.map(row => ({...row, dbId: config.databaseId}))
+						);
 					}
 
 					const storyMatch = /^\/__notion-sync\/stories\/([^/?]+)$/.exec(
@@ -368,11 +347,8 @@ export function notionSync(): Plugin {
 
 						if (req.method === 'PUT') {
 							const payload: StoryPayload = await readJsonBody(req);
-							// Update the story where it already lives; otherwise it's new,
-							// and new stories go to the first database.
-							const home = (await firstConfigWithStory(storyId)) ?? config;
 							const wrote = await enqueueWrite(() =>
-								upsertStory(home, storyId, payload)
+								upsertStory(config, storyId, payload)
 							);
 
 							server.config.logger.info(
@@ -384,9 +360,7 @@ export function notionSync(): Plugin {
 						}
 
 						if (req.method === 'DELETE') {
-							for (const dbConfig of configs) {
-								await enqueueWrite(() => archiveStory(dbConfig, storyId));
-							}
+							await enqueueWrite(() => archiveStory(config, storyId));
 							server.config.logger.info(
 								`[notion-sync] Archived story ${storyId}`
 							);

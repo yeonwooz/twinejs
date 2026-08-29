@@ -2,12 +2,6 @@
 	margin-bottom: 12px;
 }
 
-.notion-storage-dialog .storage-group > h3 {
-	font-size: inherit;
-	font-weight: bold;
-	margin: 0 0 4px 0;
-}
-
 .notion-storage-dialog .storage-group label {
 	display: block;
 	padding: 2px 0;
@@ -21,6 +15,13 @@
 	opacity: 0.75;
 }
 
-.notion-storage-dialog .storage-add select {
-	max-width: 100%;
+.notion-storage-dialog .storage-note {
+	opacity: 0.6;
+	font-size: 90%;
+	margin-left: 6px;
+}
+
+.notion-storage-dialog .storage-group {
+	max-height: 40vh;
+	overflow-y: auto;
 }

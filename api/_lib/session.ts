@@ -21,11 +21,9 @@ export const LLM_KEY_MAX_AGE = 60 * 60 * 12;
 export interface Session {
 	// Notion OAuth access token.
 	token: string;
-	// 지금 고른 루트 아래의 stories DB id — 새 스토리는 여기 저장된다.
+	// 스토리를 읽고 쓰는 단 하나의 stories DB id. 저장 위치는 한 곳뿐이다 —
+	// api/_lib/stories-db.ts 참고.
 	dbId?: string;
-	// 이 세션에서 써 본 stories DB 전부(루트를 바꿔가며 쓸 때). 읽을 땐 이걸 다
-	// 합쳐서 본다 — api/_lib/stories-db.ts의 allDbs 참고.
-	dbIds?: string[];
 	// 루트 페이지 id (위저드에서 고름).
 	rootId?: string;
 	// 이 루트를 사용자가 고른 게 아니라 앱이 기본값으로 정했나. 기본값이면 저장 위치를

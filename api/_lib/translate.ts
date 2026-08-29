@@ -38,13 +38,27 @@ const OUTPUT_SCHEMA = {
 const EMPTY_MACRO =
 	/\((?:set|put|if|unless|else-if):[^)]*?\b(?:to|into|is)\s*\)/g;
 
+// 구절 제목 줄에서 제목만 떼어낸다. twee3의 제목 줄은
+// `:: 제목 [태그 태그] {"position":"100,200","size":"100,100"}` 꼴이라, 뒤에 붙는
+// 메타데이터와 태그를 안 벗기면 링크 대상과 한 글자도 안 맞는다. Twine에서 내보낸
+// twee에는 position이 늘 붙어 있어서, 그걸 다시 빚을 때 멀쩡한 구절이 전부 "끊긴
+// 링크"로 잡혀 쓸데없는 LLM 재보정을 부르고 경고까지 띄웠다.
+export function passageTitle(line: string): string {
+	return line
+		.replace(/\s*\{[^}]*\}\s*$/, '')
+		.replace(/\s*\[[^\]]*\]\s*$/, '')
+		.trim();
+}
+
 export function validateTwee(twee: string): string[] {
 	const titles = new Set(
-		[...twee.matchAll(/^:: (.+)$/gm)].map(m =>
-			m[1].trim().replace(/\s*\[stylesheet\]$/, '')
-		)
+		[...twee.matchAll(/^:: (.+)$/gm)].map(m => passageTitle(m[1]))
 	);
-	const links = [...twee.matchAll(/\[\[[^\]]*?->([^\]]+)\]\]/g)].map(m =>
+	// 백틱으로 감싼 곳은 Harlowe가 글자로만 출력한다 — 문법을 가르치는 구절의
+	// `[[보이는 글->문단 이름]]` 예시를 링크로 세면 있지도 않은 "끊긴 링크"가 잡혀
+	// 쓸데없는 LLM 재보정을 부른다.
+	const linkable = twee.replace(/`[^`\n]*`/g, '');
+	const links = [...linkable.matchAll(/\[\[[^\]]*?->([^\]]+)\]\]/g)].map(m =>
 		m[1].trim()
 	);
 	const missing = links.filter(l => !titles.has(l));
@@ -90,10 +104,12 @@ export function repairStartPassage(twee: string): string {
 	const sd = twee.match(/(:: StoryData\n)(\{[\s\S]*?\})/);
 	if (!sd) return twee;
 
-	const headings = [...twee.matchAll(/^:: (.+)$/gm)].map(m => m[1].trim());
-	const narrative = headings.filter(
-		h => h !== 'StoryTitle' && h !== 'StoryData' && !/\[stylesheet\]$/.test(h)
-	);
+	// 제목만 떼어 쓴다. 메타데이터가 붙은 채로 start에 넣으면 시작 구절을 못 찾는
+	// 값을 써넣어, 고치려던 것을 오히려 망가뜨린다.
+	const narrative = [...twee.matchAll(/^:: (.+)$/gm)]
+		.filter(m => !m[1].includes('[stylesheet]'))
+		.map(m => passageTitle(m[1]))
+		.filter(h => h !== 'StoryTitle' && h !== 'StoryData');
 	if (!narrative.length) return twee;
 
 	let data: any;

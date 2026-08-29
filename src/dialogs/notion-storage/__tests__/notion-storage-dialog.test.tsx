@@ -11,14 +11,15 @@ const INFO = {
 		{id: 'db-b', title: '창작 스토리'}
 	],
 	pages: [{id: 'page-1', title: '새 루트'}],
-	selected: {write: 'db-a', read: ['db-a', 'db-b']}
+	selected: 'db-a',
+	isDefault: false
 };
 
-function mockApi(post: unknown = {ok: true}) {
+function mockApi(info: unknown = INFO, post: unknown = {ok: true}) {
 	const fetchMock = jest.fn(async (_url: string, opts?: RequestInit) => ({
 		ok: true,
 		status: 200,
-		json: async () => (opts?.method === 'POST' ? post : INFO)
+		json: async () => (opts?.method === 'POST' ? post : info)
 	}));
 
 	(global as any).fetch = fetchMock;
@@ -48,54 +49,81 @@ describe('<NotionStorageDialog>', () => {
 		);
 	}
 
-	it('지금 저장 위치와 읽는 위치를 표시한다', async () => {
+	it('지금 저장되는 곳을 골라 둔 상태로 보여준다', async () => {
 		mockApi();
 		renderComponent();
 
 		expect(
-			await screen.findByRole('radio', {name: '회고 스토리'})
+			await screen.findByRole('radio', {name: /회고 스토리/})
 		).toBeChecked();
-		// 읽기 체크박스는 DB가 둘 이상일 때만 나온다.
-		expect(screen.getByRole('checkbox', {name: '창작 스토리'})).toBeChecked();
+		expect(
+			screen.getByText(/지금 스토리는 노션의 "회고 스토리"에 저장됩니다/)
+		).toBeInTheDocument();
+		expect(screen.getByText('현재 저장 위치')).toBeInTheDocument();
 	});
 
-	it('저장할 곳과 읽을 곳을 함께 보낸다', async () => {
+	// 읽는 곳을 따로 고르는 개념이 없어졌다 — 저장 위치 하나뿐이다.
+	it('읽어올 곳을 따로 고르게 하지 않는다', async () => {
+		mockApi();
+		renderComponent();
+		await screen.findByRole('radio', {name: /회고 스토리/});
+
+		expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+	});
+
+	it('앱이 정한 기본값이면 그렇다고 알려준다', async () => {
+		mockApi({...INFO, isDefault: true});
+		renderComponent();
+
+		expect(await screen.findByText(/앱이 정한 기본값/)).toBeInTheDocument();
+	});
+
+	it('다른 DB를 고르면 그 DB만 보낸다', async () => {
 		const fetchMock = mockApi();
 		const onClose = jest.fn();
 
 		renderComponent({onClose});
-		await screen.findByRole('radio', {name: '회고 스토리'});
-		// 창작 DB는 읽기에서 뺀다.
-		await userEvent.click(screen.getByRole('checkbox', {name: '창작 스토리'}));
-		await userEvent.click(screen.getByText('저장'));
+		await screen.findByRole('radio', {name: /회고 스토리/});
+		await userEvent.click(screen.getByRole('radio', {name: /창작 스토리/}));
+		await userEvent.click(screen.getByText('여기에 저장하기'));
 
 		await waitFor(() => expect(onClose).toHaveBeenCalled());
-		expect(bodyOf(fetchMock)).toEqual({write: 'db-a', read: ['db-a']});
+		expect(bodyOf(fetchMock)).toEqual({dbId: 'db-b'});
 	});
 
-	it('저장할 DB는 읽기에서 뺄 수 없다', async () => {
+	// 새로 만드는 것도 같은 라디오 목록에 섞여 있다 — 버튼을 따로 두지 않는다.
+	it('페이지를 고르면 그 아래에 새로 만든다', async () => {
+		const fetchMock = mockApi(INFO, {ok: true, dbId: 'db-c'});
+
+		renderComponent();
+		await screen.findByRole('radio', {name: /회고 스토리/});
+		await userEvent.click(screen.getByRole('radio', {name: /새 루트/}));
+		await userEvent.click(screen.getByText('여기에 저장하기'));
+
+		await waitFor(() => expect(bodyOf(fetchMock)).toEqual({rootId: 'page-1'}));
+	});
+
+	it('아직 저장 위치가 없으면 그렇다고 알려준다', async () => {
+		mockApi({...INFO, selected: null});
+		renderComponent();
+
+		expect(
+			await screen.findByText('스토리를 저장할 곳이 아직 정해지지 않았습니다.')
+		).toBeInTheDocument();
+		expect(
+			screen.getByText('여기에 저장하기').closest('button')
+		).toBeDisabled();
+	});
+
+	// 지금 쓰는 곳을 그대로 다시 저장하는 건 아무 일도 안 하는 동작이라 막아둔다.
+	it('현재 위치가 골라져 있으면 저장 버튼이 눌리지 않는다', async () => {
 		mockApi();
 		renderComponent();
+		await screen.findByRole('radio', {name: /회고 스토리/});
 
-		const readCheckbox = await screen.findByRole('checkbox', {
-			name: '회고 스토리'
-		});
-
-		expect(readCheckbox).toBeDisabled();
-		expect(readCheckbox).toBeChecked();
-	});
-
-	it('고른 노션 페이지를 새 저장 위치로 연결한다', async () => {
-		const fetchMock = mockApi({ok: true, dbId: 'db-c'});
-
-		renderComponent();
-		await screen.findByRole('radio', {name: '회고 스토리'});
-		await userEvent.selectOptions(screen.getByRole('combobox'), 'page-1');
-		await userEvent.click(screen.getByText('이 페이지 연결'));
-
-		await waitFor(() =>
-			expect(bodyOf(fetchMock)).toEqual({addRootId: 'page-1'})
-		);
+		expect(
+			screen.getByText('여기에 저장하기').closest('button')
+		).toBeDisabled();
 	});
 
 	it('불러오기에 실패하면 이유를 보여준다', async () => {
@@ -116,7 +144,7 @@ describe('<NotionStorageDialog>', () => {
 
 		const {container} = renderComponent();
 
-		await screen.findByRole('radio', {name: '회고 스토리'});
+		await screen.findByRole('radio', {name: /회고 스토리/});
 		expect(await axe(container)).toHaveNoViolations();
 	});
 });
