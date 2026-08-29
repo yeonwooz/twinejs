@@ -202,10 +202,26 @@ async function archiveStory(storyId: string) {
 	}
 
 	try {
-		await fetch(`/__notion-sync/stories/${encodeURIComponent(storyId)}`, {
-			method: 'DELETE'
-		});
+		const response = await fetch(
+			`/__notion-sync/stories/${encodeURIComponent(storyId)}`,
+			{method: 'DELETE'}
+		);
+
+		// 저장과 같은 이유로 상태를 본다 — 노션에서 못 지웠는데 로컬에서는 사라져
+		// 있으면, 다음 pull에서 그 스토리가 되살아난다.
+		if (!response.ok) {
+			const reason = await errorOf(response);
+
+			setStatus({failing: true, reason});
+			console.warn(`Notion archive of story ${storyId} failed: ${reason}`);
+			return;
+		}
+
+		setStatus({failing: false, reason: undefined});
 	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+
+		setStatus({failing: true, reason});
 		console.warn(`Notion archive of story ${storyId} failed`, error);
 	}
 }

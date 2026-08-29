@@ -25,3 +25,14 @@
 	max-height: 40vh;
 	overflow-y: auto;
 }
+
+/* 순차 공개 토글. 버튼처럼 보이지 않게 해서 아래 [여기에 저장하기]와 층위를 구분한다. */
+.notion-storage-dialog .storage-disclosure {
+	background: none;
+	border: 0;
+	cursor: pointer;
+	font: inherit;
+	padding: 4px 0;
+	text-align: left;
+	text-decoration: underline;
+}
