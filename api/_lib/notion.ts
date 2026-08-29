@@ -423,13 +423,37 @@ export async function weekPages(token: string, rootId: string) {
 // 모은다 — 회고 목록과 섞이지 않게. 회고 목록을 만들 땐 이 폴더를 걸러낸다.
 export const SCENARIO_FOLDER = '시나리오';
 
+// 콜아웃·토글 안으로 옮겨둔 폴더도 찾아준다. 직속 자식만 보면 "없다"고 판단해 같은
+// 이름의 폴더를 또 만들고, 초안이 두 곳으로 갈린다 — stories DB가 세 개가 된 것과
+// 같은 원인이다. 실제로 옛 폴더가 콜아웃 안에 있어서 사본이 생겼다.
 export async function findScenarioRoot(
 	token: string,
 	rootId: string
 ): Promise<string | undefined> {
-	const pages = await listChildPages(token, rootId);
-	return pages.find((p: {title: string}) => p.title.trim() === SCENARIO_FOLDER)
-		?.id;
+	const direct = (await listChildPages(token, rootId)).find(
+		(p: {title: string}) => p.title.trim() === SCENARIO_FOLDER
+	);
+
+	if (direct) return direct.id;
+
+	const containers = (await childBlocks(token, rootId))
+		.filter(
+			b =>
+				b.has_children && b.type !== 'child_page' && b.type !== 'child_database'
+		)
+		.slice(0, CONTAINER_SCAN_LIMIT);
+
+	for (const container of containers) {
+		const nested = (await childBlocks(token, container.id)).find(
+			b =>
+				b.type === 'child_page' &&
+				(b.child_page?.title ?? '').trim() === SCENARIO_FOLDER
+		);
+
+		if (nested) return nested.id;
+	}
+
+	return undefined;
 }
 
 export async function ensureScenarioRoot(
