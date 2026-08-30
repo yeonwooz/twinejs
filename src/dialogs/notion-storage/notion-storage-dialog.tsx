@@ -1,12 +1,13 @@
-// 스토리를 노션 어디에 저장할지 고르는 화면. 저장 위치는 **한 곳**이다 — 고를 것도
-// 하나고, 스토리가 노션 여기저기 흩어지지 않는다.
+// 스토리를 노션 어디에 저장할지 고르는 화면.
 //
-// 예전에는 "저장할 곳 하나 + 함께 읽어올 곳 여럿 + 페이지 추가"로 세 덩어리였고
-// 버튼도 세 개였다. 읽는 곳을 따로 고르는 개념이 사라져서 목록 하나로 줄었다.
+// 저장할 곳은 두 가지이고 성격이 다르다 — 초안 원고는 **페이지** 아래에, twee 스토리는
+// **DB** 안에 들어간다. 한때 이 둘을 한 라디오 목록에 형제처럼 놓았다가 무슨 선택인지
+// 알 수 없다는 지적을 받았고, 반대로 DB 하나로 뭉갰다가는 회고·시나리오가
+// "root not selected"로 깨졌다. 그래서 각각 고르게 하되, 한 목록에는 한 종류만 넣는다.
 //
-// 이 화면은 로그인해서 쓰는 배포 환경 전용이다. dev 서버는 .env.local이 정하므로
-// 물을 게 없다(status 응답에 chosen이 없으면 띄우지 않는다).
-import {IconCheck, IconX} from '@tabler/icons';
+// 연결이 안 된 사용자도 여기서 노션에 연결할 수 있어야 한다. 예전에는 연결 링크가
+// 회고/시나리오 위저드 안에만 있어서, 새 컴퓨터에서 이 화면으로 먼저 들어오면 막혔다.
+import {IconCheck, IconPlugConnected, IconX} from '@tabler/icons';
 import * as React from 'react';
 import {ButtonBar} from '../../components/container/button-bar';
 import {CardContent} from '../../components/container/card';
@@ -23,18 +24,12 @@ interface NamedItem {
 }
 
 interface StorageInfo {
+	connected: boolean;
 	options: NamedItem[];
 	pages: NamedItem[];
-	selected: string | null;
-	isDefault: boolean;
+	selected?: {dbId: string | null; rootId: string | null};
+	isDefault?: boolean;
 }
-
-// 고른 값은 둘 중 하나다 — 기존 DB(`db:<id>`)냐, 새로 만들 페이지(`page:<id>`)냐.
-// 라디오 하나로 다루려고 접두어를 붙인다. 다만 화면에서는 섞어 보여주지 않는다 —
-// "이걸 골라라"(DB)와 "여기에 새로 만들어라"(페이지)는 성격이 달라서, 형제처럼 한
-// 목록에 놓으면 무슨 선택인지 알 수 없다.
-const DB = 'db:';
-const PAGE = 'page:';
 
 async function api(path: string, body?: unknown) {
 	const response = await fetch(path, {
@@ -69,11 +64,13 @@ async function api(path: string, body?: unknown) {
 
 export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 	const [info, setInfo] = React.useState<StorageInfo>();
-	const [choice, setChoice] = React.useState<string>();
+	const [root, setRoot] = React.useState<string>();
+	const [db, setDb] = React.useState<string>();
+	// "다른 곳에 새로 만들기"로 고른 페이지. DB를 고르는 것과 성격이 달라 접어둔다.
+	const [createUnder, setCreateUnder] = React.useState<string>();
+	const [creating, setCreating] = React.useState(false);
 	const [error, setError] = React.useState<string>();
 	const [busy, setBusy] = React.useState(false);
-	// 새로 만드는 건 드문 일이라 접어둔다. 평소에는 DB 목록만 보인다.
-	const [creating, setCreating] = React.useState(false);
 	const sync = useSyncStatus();
 
 	React.useEffect(() => {
@@ -88,7 +85,8 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 				}
 
 				setInfo(loaded);
-				setChoice(loaded.selected ? DB + loaded.selected : undefined);
+				setRoot(loaded.selected?.rootId ?? undefined);
+				setDb(loaded.selected?.dbId ?? undefined);
 			} catch (e) {
 				if (!cancelled) {
 					setError(e instanceof Error ? e.message : String(e));
@@ -102,18 +100,13 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 	}, []);
 
 	async function save() {
-		if (!choice) {
-			return;
-		}
-
 		setBusy(true);
 		try {
-			await api(
-				'/api/notion-sync/dbs',
-				choice.startsWith(PAGE)
-					? {rootId: choice.slice(PAGE.length)}
-					: {dbId: choice.slice(DB.length)}
-			);
+			await api('/api/notion-sync/dbs', {
+				...(root ? {rootId: root} : {}),
+				...(creating && createUnder ? {createDbUnder: createUnder} : {}),
+				...(!creating && db ? {dbId: db} : {})
+			});
 			forgetSyncStatus();
 			props.onClose();
 		} catch (e) {
@@ -123,10 +116,13 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 		}
 	}
 
-	const current =
-		info && info.selected
-			? info.options.find(option => option.id === info.selected)
-			: undefined;
+	const currentDb = info?.options.find(o => o.id === info.selected?.dbId);
+	const currentRoot = info?.pages.find(p => p.id === info.selected?.rootId);
+	// 지금 상태와 달라진 게 있어야 저장할 의미가 있다.
+	const changed =
+		(creating && !!createUnder) ||
+		(!creating && !!db && db !== info?.selected?.dbId) ||
+		(!!root && root !== info?.selected?.rootId);
 
 	return (
 		<DialogCard
@@ -148,19 +144,36 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 					</p>
 				)}
 				{!info && !error && <p>불러오는 중…</p>}
-				{info && (
+				{info && !info.connected && (
+					<p className="storage-hint">
+						노션에 연결되어 있지 않습니다. 연결하면 스토리와 초안이 노션에
+						저장되고, 다른 컴퓨터에서도 이어서 쓸 수 있습니다.
+					</p>
+				)}
+				{info?.connected && (
 					<>
-						<p className="storage-hint">
-							{current
-								? `지금 스토리는 노션의 "${current.title}"에 저장됩니다${
-										info.isDefault ? ' (앱이 정한 기본값)' : ''
-									}.`
-								: '스토리를 저장할 곳이 아직 정해지지 않았습니다.'}
-						</p>
-						{/* 평소에는 고를 수 있는 DB만 보여준다. */}
-						{!creating && (
-							<>
-								<div className="storage-group">
+						<div className="storage-group">
+							<h3>초안을 담아 둘 페이지</h3>
+							<p className="storage-hint">
+								회고·시나리오·스토리 구상이 이 페이지 아래에 쌓입니다.
+								{currentRoot ? ` 지금은 "${currentRoot.title}".` : ''}
+							</p>
+							{info.pages.map(page => (
+								<label key={page.id}>
+									<input
+										checked={root === page.id}
+										name="notion-storage-root"
+										onChange={() => setRoot(page.id)}
+										type="radio"
+									/>
+									{page.title}
+								</label>
+							))}
+						</div>
+						<div className="storage-group">
+							<h3>스토리(twee)를 저장할 DB</h3>
+							{!creating && (
+								<>
 									{info.options.length === 0 && (
 										<p className="storage-hint">
 											노션에 스토리 DB가 없습니다. 아래에서 만들 곳을 골라
@@ -170,81 +183,87 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 									{info.options.map(option => (
 										<label key={option.id}>
 											<input
-												checked={choice === DB + option.id}
-												name="notion-storage"
-												onChange={() => setChoice(DB + option.id)}
+												checked={db === option.id}
+												name="notion-storage-db"
+												onChange={() => setDb(option.id)}
 												type="radio"
 											/>
 											{option.title}
-											{option.id === info.selected && (
+											{option.id === info.selected?.dbId && (
 												<span className="storage-note">현재 저장 위치</span>
 											)}
 										</label>
 									))}
-								</div>
-								<button
-									className="storage-disclosure"
-									onClick={() => {
-										setCreating(true);
-										setChoice(undefined);
-									}}
-									type="button"
-								>
-									› 다른 곳에 새로 만들기
-								</button>
-								<p className="storage-hint">
-									바꿔도 예전 곳의 스토리는 노션에 그대로 남고, 이 앱에 있는
-									스토리도 지워지지 않습니다. 이후에 저장되는 것만 새 위치로
-									갑니다.
-								</p>
-							</>
-						)}
-						{/* 새로 만드는 건 DB를 고르는 것과 성격이 다르다. 같은 목록에
-						    섞지 않고, 펼쳤을 때만 따로 보여준다. */}
-						{creating && (
-							<>
-								<button
-									className="storage-disclosure"
-									onClick={() => {
-										setCreating(false);
-										setChoice(info.selected ? DB + info.selected : undefined);
-									}}
-									type="button"
-								>
-									‹ 다른 곳에 새로 만들기
-								</button>
-								<p className="storage-hint">
-									고른 페이지 아래에 스토리 DB가 생깁니다. 그 페이지에 이미
-									있으면 그걸 그대로 씁니다.
-								</p>
-								<div className="storage-group">
+									<button
+										className="storage-disclosure"
+										onClick={() => setCreating(true)}
+										type="button"
+									>
+										› 다른 곳에 새로 만들기
+									</button>
+								</>
+							)}
+							{creating && (
+								<>
+									<button
+										className="storage-disclosure"
+										onClick={() => {
+											setCreating(false);
+											setCreateUnder(undefined);
+										}}
+										type="button"
+									>
+										‹ 다른 곳에 새로 만들기
+									</button>
+									<p className="storage-hint">
+										고른 페이지 아래에 스토리 DB가 생깁니다. 그 페이지에 이미
+										있으면 그걸 그대로 씁니다.
+									</p>
 									{info.pages.map(page => (
 										<label key={page.id}>
 											<input
-												checked={choice === PAGE + page.id}
-												name="notion-storage"
-												onChange={() => setChoice(PAGE + page.id)}
+												checked={createUnder === page.id}
+												name="notion-storage-db"
+												onChange={() => setCreateUnder(page.id)}
 												type="radio"
 											/>
 											{page.title}
 										</label>
 									))}
-								</div>
-							</>
-						)}
+								</>
+							)}
+						</div>
+						<p className="storage-hint">
+							바꿔도 예전 곳의 스토리는 노션에 그대로 남고, 이 앱에 있는
+							스토리도 지워지지 않습니다. 이후에 저장되는 것만 새 위치로 갑니다.
+							{currentDb && info.isDefault
+								? ' (지금 DB는 앱이 정한 기본값)'
+								: ''}
+						</p>
 					</>
 				)}
 			</CardContent>
 			<ButtonBar>
-				{/* 라벨이 곧 동작이다 — "저장"만 있으면 무엇이 저장되는지(스토리인가
-				    설정인가) 알 수 없다는 지적을 받았다. */}
-				<IconButton
-					disabled={busy || !choice || choice === DB + info?.selected}
-					icon={<IconCheck />}
-					label="여기에 저장하기"
-					onClick={save}
-					variant="primary"
-				/>
+				{info && !info.connected ? (
+					<IconButton
+						icon={<IconPlugConnected />}
+						label="노션 연결하기"
+						onClick={() => {
+							window.location.href = '/api/notion/login';
+						}}
+						variant="primary"
+					/>
+				) : (
+					// 라벨이 곧 동작이다 — "저장"만 있으면 무엇이 저장되는지(스토리인가
+					// 설정인가) 알 수 없다는 지적을 받았다.
+					<IconButton
+						disabled={busy || !changed}
+						icon={<IconCheck />}
+						label="여기에 저장하기"
+						onClick={save}
+						variant="primary"
+					/>
+				)}
 				<IconButton icon={<IconX />} label="닫기" onClick={props.onClose} />
 			</ButtonBar>
 		</DialogCard>

@@ -114,6 +114,38 @@ async function isEnabled() {
 	return enabled;
 }
 
+/**
+ * 일반 스토리의 구상을 적을 노션 초안 페이지를 만든다. 회고·시나리오는 위저드가
+ * 각자 만들고 있었는데, 새 스토리로 만든 것만 노션에 구상 자리가 없었다.
+ *
+ * 스토리 생성 자체를 막지 않는다 — 노션이 안 되더라도 스토리는 만들어져야 한다.
+ * 실패는 상태로 남겨 툴바에 뜨게 한다.
+ */
+export async function createStoryDraft(name: string) {
+	if (!(await isEnabled())) {
+		return;
+	}
+
+	try {
+		const response = await fetch('/api/notion/retros', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			credentials: 'same-origin',
+			body: JSON.stringify({kind: 'story', title: name})
+		});
+
+		// 같은 제목이 이미 있으면(409) 그 초안을 그대로 쓰면 되므로 실패가 아니다.
+		if (!response.ok && response.status !== 409) {
+			const reason = await errorOf(response);
+
+			setStatus({failing: true, reason});
+			console.warn(`Notion draft for "${name}" failed: ${reason}`);
+		}
+	} catch (error) {
+		console.warn(`Notion draft for "${name}" failed`, error);
+	}
+}
+
 /** 서버가 돌려준 이유를 꺼낸다. 없으면 상태 코드라도 보여준다. */
 async function errorOf(response: Response) {
 	try {

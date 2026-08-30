@@ -2,6 +2,12 @@
 	margin-bottom: 12px;
 }
 
+.notion-storage-dialog .storage-group > h3 {
+	font-size: inherit;
+	font-weight: bold;
+	margin: 0 0 4px 0;
+}
+
 .notion-storage-dialog .storage-group label {
 	display: block;
 	padding: 2px 0;

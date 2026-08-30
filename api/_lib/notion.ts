@@ -422,16 +422,20 @@ export async function weekPages(token: string, rootId: string) {
 // 시나리오 페이지들은 루트 바로 아래가 아니라 루트 아래 "시나리오" 폴더 페이지에
 // 모은다 — 회고 목록과 섞이지 않게. 회고 목록을 만들 땐 이 폴더를 걸러낸다.
 export const SCENARIO_FOLDER = '시나리오';
+// 일반 스토리의 구상도 노션에 둔다. 회고·시나리오와 섞이지 않게 폴더를 나눈다.
+export const STORY_FOLDER = '스토리';
+export const DRAFT_FOLDERS = [SCENARIO_FOLDER, STORY_FOLDER];
 
 // 콜아웃·토글 안으로 옮겨둔 폴더도 찾아준다. 직속 자식만 보면 "없다"고 판단해 같은
 // 이름의 폴더를 또 만들고, 초안이 두 곳으로 갈린다 — stories DB가 세 개가 된 것과
 // 같은 원인이다. 실제로 옛 폴더가 콜아웃 안에 있어서 사본이 생겼다.
-export async function findScenarioRoot(
+export async function findDraftFolder(
 	token: string,
-	rootId: string
+	rootId: string,
+	folder: string
 ): Promise<string | undefined> {
 	const direct = (await listChildPages(token, rootId)).find(
-		(p: {title: string}) => p.title.trim() === SCENARIO_FOLDER
+		(p: {title: string}) => p.title.trim() === folder
 	);
 
 	if (direct) return direct.id;
@@ -446,8 +450,7 @@ export async function findScenarioRoot(
 	for (const container of containers) {
 		const nested = (await childBlocks(token, container.id)).find(
 			b =>
-				b.type === 'child_page' &&
-				(b.child_page?.title ?? '').trim() === SCENARIO_FOLDER
+				b.type === 'child_page' && (b.child_page?.title ?? '').trim() === folder
 		);
 
 		if (nested) return nested.id;
@@ -456,13 +459,14 @@ export async function findScenarioRoot(
 	return undefined;
 }
 
-export async function ensureScenarioRoot(
+export async function ensureDraftFolder(
 	token: string,
-	rootId: string
+	rootId: string,
+	folder: string
 ): Promise<string> {
 	return (
-		(await findScenarioRoot(token, rootId)) ??
-		(await createRetroPage(token, rootId, SCENARIO_FOLDER)).id
+		(await findDraftFolder(token, rootId, folder)) ??
+		(await createRetroPage(token, rootId, folder)).id
 	);
 }
 
