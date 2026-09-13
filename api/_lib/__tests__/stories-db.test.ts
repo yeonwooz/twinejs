@@ -3,61 +3,113 @@
  *
  * @jest-environment node
  */
-import {currentDb, defaultDb} from '../stories-db';
-import {searchStoriesDbs} from '../notion';
-import {Session} from '../session';
+import type {ServerResponse} from 'node:http';
+import {chooseRoot, currentDb, hasRoot, NO_ROOT_MESSAGE} from '../stories-db';
+import {ensureStoriesDb} from '../notion';
+import {Session, writeSession} from '../session';
 
 jest.mock('../notion');
+jest.mock('../session', () => ({
+	...jest.requireActual('../session'),
+	writeSession: jest.fn()
+}));
 
-const mockDbs = searchStoriesDbs as jest.MockedFunction<
-	typeof searchStoriesDbs
+const mockEnsure = ensureStoriesDb as jest.MockedFunction<
+	typeof ensureStoriesDb
 >;
+const mockWrite = writeSession as jest.MockedFunction<typeof writeSession>;
+const res = {} as ServerResponse;
 
 const session = (props: Partial<Session> = {}): Session => ({
 	token: 'tok',
 	...props
 });
 
-// 저장 위치를 고른 적이 없어도 어딘가로는 저장돼야 한다. 예전에는 그때 동기화가
-// 조용히 꺼졌고, 스토리가 브라우저에만 남았다.
-describe('defaultDb', () => {
-	it('이미 있는 stories DB 중 가장 최근 것을 쓴다', async () => {
-		mockDbs.mockResolvedValue([
-			{id: 'db-recent', title: 'Twine Stories (창작)'},
-			{id: 'db-old', title: 'Twine Stories (회고)'}
-		]);
+beforeEach(() => {
+	mockEnsure.mockReset();
+	mockWrite.mockReset();
+});
 
-		expect(await defaultDb(session())).toEqual({dbId: 'db-recent'});
+describe('hasRoot', () => {
+	it('루트 페이지를 골랐을 때만 참이다', () => {
+		expect(hasRoot(session({rootId: 'root'}))).toBe(true);
+		expect(hasRoot(session())).toBe(false);
 	});
 
-	// 위치를 추측해 만들면 그때그때 다른 페이지 아래에 빈 DB가 생기고 스토리가
-	// 흩어진다. 만드는 대신 이유를 담아 던지고, 사용자가 고르게 한다.
-	it('stories DB가 없으면 만들지 않고 고르라고 던진다', async () => {
-		mockDbs.mockResolvedValue([]);
+	// 옛 방식으로 루트 없이 고른 DB는 어디 있는지, 누구 것인지 알 수 없다.
+	it('루트 없이 DB만 있는 옛 세션은 고른 것으로 치지 않는다', () => {
+		expect(hasRoot(session({dbId: 'db-old'}))).toBe(false);
+	});
+});
 
-		await expect(defaultDb(session())).rejects.toThrow('"저장 위치"에서 골라');
+describe('chooseRoot', () => {
+	it('루트 아래 DB를 확보해 루트와 함께 세션에 적는다', async () => {
+		mockEnsure.mockResolvedValue('db-under-root');
+
+		const s = session({dbId: 'db-old'});
+
+		expect(await chooseRoot(s, 'root', res)).toEqual({
+			rootId: 'root',
+			dbId: 'db-under-root'
+		});
+		expect(mockEnsure).toHaveBeenCalledWith('tok', 'root');
+		expect(s).toMatchObject({
+			rootId: 'root',
+			dbId: 'db-under-root',
+			dbRootId: 'root'
+		});
+		expect(mockWrite).toHaveBeenCalledWith(res, s);
 	});
 });
 
 describe('currentDb', () => {
-	it('고른 DB가 있으면 노션을 뒤지지 않는다', async () => {
-		expect(await currentDb(session({dbId: 'db-chosen'}))).toBe('db-chosen');
-		expect(mockDbs).not.toHaveBeenCalled();
+	// 예전에는 여기서 워크스페이스를 뒤져 "가장 최근 Twine Stories DB"를 기본값으로
+	// 삼았다. 팀 워크스페이스에서는 그게 남의 DB였다.
+	it('루트를 고르지 않았으면 추측하지 않고 고르라고 던진다', async () => {
+		await expect(currentDb(session())).rejects.toThrow(NO_ROOT_MESSAGE);
+		expect(mockEnsure).not.toHaveBeenCalled();
 	});
 
-	it('없으면 기본값으로 정하고 기본값이라고 표시해 둔다', async () => {
-		mockDbs.mockResolvedValue([{id: 'db-found', title: 'Twine Stories'}]);
-
-		const s = session();
-
-		expect(await currentDb(s)).toBe('db-found');
-		expect(s.dbId).toBe('db-found');
-		expect(s.autoRoot).toBe(true);
+	it('루트와 맞는 DB 캐시가 있으면 노션을 뒤지지 않는다', async () => {
+		expect(
+			await currentDb(session({rootId: 'root', dbId: 'db', dbRootId: 'root'}))
+		).toBe('db');
+		expect(mockEnsure).not.toHaveBeenCalled();
 	});
 
-	it('고를 곳이 없으면 그대로 실패한다 — 아무 곳에나 만들지 않는다', async () => {
-		mockDbs.mockResolvedValue([]);
+	it('캐시가 없으면 루트 아래에서 찾아 캐시한다', async () => {
+		mockEnsure.mockResolvedValue('db-under-root');
 
-		await expect(currentDb(session())).rejects.toThrow('찾지 못했습니다');
+		const s = session({rootId: 'root'});
+
+		expect(await currentDb(s, res)).toBe('db-under-root');
+		expect(mockEnsure).toHaveBeenCalledWith('tok', 'root');
+		expect(s).toMatchObject({dbId: 'db-under-root', dbRootId: 'root'});
+		expect(mockWrite).toHaveBeenCalledWith(res, s);
+	});
+
+	// 루트를 바꿨거나, 옛 방식으로 루트와 무관하게 고른 DB가 남아 있는 경우.
+	it('캐시가 다른 루트의 것이면 버리고 다시 찾는다', async () => {
+		mockEnsure.mockResolvedValue('db-under-new');
+
+		const s = session({rootId: 'new', dbId: 'db-old', dbRootId: 'old'});
+
+		expect(await currentDb(s, res)).toBe('db-under-new');
+		expect(s).toMatchObject({dbId: 'db-under-new', dbRootId: 'new'});
+	});
+
+	it('어느 루트에서 왔는지 모르는 옛 dbId도 다시 찾는다', async () => {
+		mockEnsure.mockResolvedValue('db-under-root');
+
+		expect(await currentDb(session({rootId: 'root', dbId: 'db-old'}))).toBe(
+			'db-under-root'
+		);
+		expect(mockEnsure).toHaveBeenCalledWith('tok', 'root');
+	});
+
+	it('응답 객체가 없으면 세션 쿠키를 쓰지 않는다', async () => {
+		mockEnsure.mockResolvedValue('db');
+		await currentDb(session({rootId: 'root'}));
+		expect(mockWrite).not.toHaveBeenCalled();
 	});
 });

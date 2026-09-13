@@ -1,9 +1,10 @@
 // 스토리를 노션 어디에 저장할지 고르는 화면.
 //
-// 저장할 곳은 두 가지이고 성격이 다르다 — 초안 원고는 **페이지** 아래에, twee 스토리는
-// **DB** 안에 들어간다. 한때 이 둘을 한 라디오 목록에 형제처럼 놓았다가 무슨 선택인지
-// 알 수 없다는 지적을 받았고, 반대로 DB 하나로 뭉갰다가는 회고·시나리오가
-// "root not selected"로 깨졌다. 그래서 각각 고르게 하되, 한 목록에는 한 종류만 넣는다.
+// 고르는 것은 **페이지 하나**다. 초안(회고·시나리오·스토리 구상)도 twee 스토리 DB도
+// 전부 그 아래에 정해진 모양으로 들어간다(api/_lib/stories-db.ts). 예전에는 초안
+// 페이지와 스토리 DB를 따로 골랐고, 고르지 않으면 앱이 워크스페이스에서 찾은 DB를
+// 대신 정해줬다 — 그래서 저장 위치가 뒤죽박죽이 되고, 팀 워크스페이스에서는 모두가
+// 같은 DB를 보게 됐다. 선택을 하나로 줄이고 기본값 추측을 없앤 것이 이 화면이다.
 //
 // 연결이 안 된 사용자도 여기서 노션에 연결할 수 있어야 한다. 예전에는 연결 링크가
 // 회고/시나리오 위저드 안에만 있어서, 새 컴퓨터에서 이 화면으로 먼저 들어오면 막혔다.
@@ -18,17 +19,16 @@ import {useSyncStatus} from '../../store/persistence/notion-sync/use-sync-status
 import {DialogComponentProps} from '../dialogs.types';
 import './notion-storage-dialog.css';
 
-interface NamedItem {
+interface PageOption {
 	id: string;
 	title: string;
+	mine?: boolean;
 }
 
 interface StorageInfo {
 	connected: boolean;
-	options: NamedItem[];
-	pages: NamedItem[];
-	selected?: {dbId: string | null; rootId: string | null};
-	isDefault?: boolean;
+	pages: PageOption[];
+	selected: {rootId: string} | null;
 }
 
 async function api(path: string, body?: unknown) {
@@ -65,10 +65,6 @@ async function api(path: string, body?: unknown) {
 export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 	const [info, setInfo] = React.useState<StorageInfo>();
 	const [root, setRoot] = React.useState<string>();
-	const [db, setDb] = React.useState<string>();
-	// "다른 곳에 새로 만들기"로 고른 페이지. DB를 고르는 것과 성격이 달라 접어둔다.
-	const [createUnder, setCreateUnder] = React.useState<string>();
-	const [creating, setCreating] = React.useState(false);
 	const [error, setError] = React.useState<string>();
 	const [busy, setBusy] = React.useState(false);
 	const sync = useSyncStatus();
@@ -78,7 +74,7 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 
 		(async () => {
 			try {
-				const loaded: StorageInfo = await api('/api/notion-sync/dbs');
+				const loaded: StorageInfo = await api('/api/notion/root');
 
 				if (cancelled) {
 					return;
@@ -86,7 +82,6 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 
 				setInfo(loaded);
 				setRoot(loaded.selected?.rootId ?? undefined);
-				setDb(loaded.selected?.dbId ?? undefined);
 			} catch (e) {
 				if (!cancelled) {
 					setError(e instanceof Error ? e.message : String(e));
@@ -102,11 +97,7 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 	async function save() {
 		setBusy(true);
 		try {
-			await api('/api/notion-sync/dbs', {
-				...(root ? {rootId: root} : {}),
-				...(creating && createUnder ? {createDbUnder: createUnder} : {}),
-				...(!creating && db ? {dbId: db} : {})
-			});
+			await api('/api/notion/root', {pageId: root});
 			forgetSyncStatus();
 			props.onClose();
 		} catch (e) {
@@ -116,13 +107,9 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 		}
 	}
 
-	const currentDb = info?.options.find(o => o.id === info.selected?.dbId);
-	const currentRoot = info?.pages.find(p => p.id === info.selected?.rootId);
-	// 지금 상태와 달라진 게 있어야 저장할 의미가 있다.
-	const changed =
-		(creating && !!createUnder) ||
-		(!creating && !!db && db !== info?.selected?.dbId) ||
-		(!!root && root !== info?.selected?.rootId);
+	const current = info?.pages.find(p => p.id === info.selected?.rootId);
+	const changed = !!root && root !== info?.selected?.rootId;
+	const sharedWorkspace = !!info?.pages.some(p => p.mine === false);
 
 	return (
 		<DialogCard
@@ -152,12 +139,26 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 				)}
 				{info?.connected && (
 					<>
+						<p className="storage-hint">
+							노션 페이지 하나를 고르면 그 아래에 이렇게 정리됩니다.
+						</p>
+						<pre className="storage-layout">
+							{[
+								current ? current.title : '고른 페이지',
+								'├─ 회고 초안 (페이지들)',
+								'├─ 시나리오/',
+								'├─ 스토리/',
+								'└─ Twine Stories (DB) ← 스토리(twee)'
+							].join('\n')}
+						</pre>
 						<div className="storage-group">
-							<h3>초안을 담아 둘 페이지</h3>
-							<p className="storage-hint">
-								회고·시나리오·스토리 구상이 이 페이지 아래에 쌓입니다.
-								{currentRoot ? ` 지금은 "${currentRoot.title}".` : ''}
-							</p>
+							<h3>저장할 페이지</h3>
+							{info.pages.length === 0 && (
+								<p className="storage-hint">
+									공유된 페이지가 없습니다. 노션에 다시 연결하면서 저장할
+									페이지를 공유해 주세요.
+								</p>
+							)}
 							{info.pages.map(page => (
 								<label key={page.id}>
 									<input
@@ -167,78 +168,25 @@ export const NotionStorageDialog: React.FC<DialogComponentProps> = props => {
 										type="radio"
 									/>
 									{page.title}
+									{page.mine && (
+										<span className="storage-note">내가 만든 페이지</span>
+									)}
+									{page.id === info.selected?.rootId && (
+										<span className="storage-note">현재 저장 위치</span>
+									)}
 								</label>
 							))}
 						</div>
-						<div className="storage-group">
-							<h3>스토리(twee)를 저장할 DB</h3>
-							{!creating && (
-								<>
-									{info.options.length === 0 && (
-										<p className="storage-hint">
-											노션에 스토리 DB가 없습니다. 아래에서 만들 곳을 골라
-											주세요.
-										</p>
-									)}
-									{info.options.map(option => (
-										<label key={option.id}>
-											<input
-												checked={db === option.id}
-												name="notion-storage-db"
-												onChange={() => setDb(option.id)}
-												type="radio"
-											/>
-											{option.title}
-											{option.id === info.selected?.dbId && (
-												<span className="storage-note">현재 저장 위치</span>
-											)}
-										</label>
-									))}
-									<button
-										className="storage-disclosure"
-										onClick={() => setCreating(true)}
-										type="button"
-									>
-										› 다른 곳에 새로 만들기
-									</button>
-								</>
-							)}
-							{creating && (
-								<>
-									<button
-										className="storage-disclosure"
-										onClick={() => {
-											setCreating(false);
-											setCreateUnder(undefined);
-										}}
-										type="button"
-									>
-										‹ 다른 곳에 새로 만들기
-									</button>
-									<p className="storage-hint">
-										고른 페이지 아래에 스토리 DB가 생깁니다. 그 페이지에 이미
-										있으면 그걸 그대로 씁니다.
-									</p>
-									{info.pages.map(page => (
-										<label key={page.id}>
-											<input
-												checked={createUnder === page.id}
-												name="notion-storage-db"
-												onChange={() => setCreateUnder(page.id)}
-												type="radio"
-											/>
-											{page.title}
-										</label>
-									))}
-								</>
-							)}
-						</div>
+						{sharedWorkspace && (
+							<p className="storage-hint">
+								같은 워크스페이스를 쓰는 다른 사람이 공유한 페이지도 보입니다.
+								같은 페이지를 고른 사람끼리는 스토리를 함께 보게 되니, 혼자 쓸
+								거라면 자기 페이지를 고르세요.
+							</p>
+						)}
 						<p className="storage-hint">
 							바꿔도 예전 곳의 스토리는 노션에 그대로 남고, 이 앱에 있는
 							스토리도 지워지지 않습니다. 이후에 저장되는 것만 새 위치로 갑니다.
-							{currentDb && info.isDefault
-								? ' (지금 DB는 앱이 정한 기본값)'
-								: ''}
 						</p>
 					</>
 				)}

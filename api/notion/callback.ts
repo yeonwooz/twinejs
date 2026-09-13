@@ -59,10 +59,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const data = (await tokenRes.json()) as {
 		access_token: string;
 		workspace_name?: string;
+		owner?: {type?: string; user?: {id?: string}};
 	};
+	// 새 연결은 저장 위치를 다시 고르게 한다. 같은 워크스페이스에서 공개 통합은 봇을
+	// 하나만 두므로, 다른 사람이 공유한 페이지·DB도 이 토큰으로 보인다 — 예전 세션의
+	// 선택을 이어받지 않고, 사용자가 자기 페이지를 고르게 하는 편이 안전하다.
 	writeSession(res, {
 		token: data.access_token,
-		workspaceName: data.workspace_name
+		workspaceName: data.workspace_name,
+		userId: data.owner?.user?.id
 	});
 
 	res.writeHead(302, {Location: '/#/retro?notion=connected'});

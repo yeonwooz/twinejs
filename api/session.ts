@@ -17,7 +17,9 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
 	const s = getSession(req);
 	res.status(200).json({
 		connected: !!s?.token,
-		configured: !!(s?.token && s?.dbId),
+		// 저장 위치(루트 페이지)를 골랐나. 옛 세션의 dbId만으로는 설정된 것으로 보지
+		// 않는다 — 위저드가 루트 단계로 보내 다시 고르게 한다.
+		configured: !!(s?.token && s?.rootId),
 		workspaceName: s?.workspaceName ?? null
 	});
 }

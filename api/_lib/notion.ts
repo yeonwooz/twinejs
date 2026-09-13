@@ -105,9 +105,9 @@ export function tweeFromBlocks(blocks: any[]): string {
 		.join('');
 }
 
-// stories DB는 "고른 루트 페이지당 하나"다. 회고냐 창작 시나리오냐로 나누지 않는다
-// — 루트를 고르는 것 자체가 이미 보관 위치를 고르는 일이고, 같은 루트를 골랐다면
-// 거기 있는 DB에 넣는 게 사용자가 기대하는 동작이다.
+// stories DB는 "고른 루트 페이지 아래 하나"다. 회고냐 창작 시나리오냐로 나누지 않고,
+// 루트와 무관한 곳에 두지도 않는다 — 루트를 고르는 것이 곧 저장 위치를 고르는 일이다.
+// 전체 배치는 api/_lib/stories-db.ts 머리말 참고.
 const STORIES_DB_BASE = 'Twine Stories';
 
 // 이름 뒤에 뭐가 붙어도("Twine Stories (창작)" 등) 같은 DB로 인정한다 — 노션에서
@@ -228,16 +228,6 @@ export async function ensureStoriesDb(
 		}
 	});
 	return db.id;
-}
-
-// 저장 위치 고르기 화면에 보여줄 이름.
-export async function databaseTitle(token: string, dbId: string) {
-	const db = await notion(token, 'GET', `/databases/${dbId}`);
-
-	return (
-		(db.title ?? []).map((t: any) => t.plain_text ?? '').join('') ||
-		'(제목 없음)'
-	);
 }
 
 export interface RemoteStory {
@@ -374,10 +364,13 @@ function titleOf(page: any): string {
 	return page?.child_page?.title ?? '';
 }
 
-// 워크스페이스에서 stories DB를 이름으로 바로 찾는다. 페이지를 타고 내려가는
-// findStoriesDb는 콜아웃 한 겹까지만 보므로, 사용자가 노션에서 DB를 더 깊이 정리해
-// 두면 "없다"고 판단해 같은 이름의 빈 DB를 또 만든다. 검색은 깊이와 무관하다.
-// 노션 검색은 최근 편집 순이라, 여러 개면 가장 최근에 쓴 DB가 앞에 온다.
+// 워크스페이스에서 stories DB를 이름으로 찾는다. findStoriesDbUnder의 후보 수집용 —
+// 페이지를 타고 내려가는 findStoriesDb는 콜아웃 한 겹까지만 보므로, 더 깊이 정리해 둔
+// DB는 검색으로 모아 조상 사슬로 소속을 판정한다.
+//
+// 이 결과를 **그대로 저장 위치로 쓰면 안 된다.** 공개 통합은 워크스페이스당 봇이
+// 하나라 다른 사람이 공유한 DB도 같이 나온다 — 한때 첫 항목을 기본값으로 삼았다가
+// 팀 전체가 남의 DB에 저장했다. 반드시 루트 아래인지 판정을 거쳐야 한다.
 export async function searchStoriesDbs(token: string) {
 	const res = await notion(token, 'POST', '/search', {
 		filter: {property: 'object', value: 'database'},
@@ -394,15 +387,33 @@ export async function searchStoriesDbs(token: string) {
 		.map(({id, title}: any) => ({id, title}));
 }
 
-// OAuth 동의 때 공유된 페이지들(회고 루트 후보).
-export async function searchPages(token: string) {
+export interface PageOption {
+	id: string;
+	title: string;
+	// 이 토큰의 사용자가 만든 페이지인가. 같은 워크스페이스를 여럿이 쓰면 남이 공유한
+	// 페이지도 검색에 섞여 나오므로, 자기 것을 앞에 세워 고르기 쉽게 한다. 사용자 id를
+	// 모르면(옛 세션) 전부 false.
+	mine: boolean;
+}
+
+// 통합에 공유된 페이지들 — 저장 위치(루트) 후보. 내가 만든 페이지가 먼저 온다.
+export async function searchPages(
+	token: string,
+	userId?: string
+): Promise<PageOption[]> {
 	const res = await notion(token, 'POST', '/search', {
 		filter: {property: 'object', value: 'page'},
 		page_size: 100
 	});
-	return res.results
+	const pages: PageOption[] = res.results
 		.filter((p: any) => p.id && !p.archived)
-		.map((p: any) => ({id: p.id, title: titleOf(p) || '(제목 없음)'}));
+		.map((p: any) => ({
+			id: p.id,
+			title: titleOf(p) || '(제목 없음)',
+			mine: !!userId && p.created_by?.id === userId
+		}));
+
+	return [...pages.filter(p => p.mine), ...pages.filter(p => !p.mine)];
 }
 
 export function weekNumOf(title: string): number {

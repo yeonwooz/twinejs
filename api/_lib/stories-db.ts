@@ -1,61 +1,78 @@
-// stories DB 해석. 규칙은 하나 — 스토리는 **한 곳**에만 저장한다. 회고든 창작
-// 시나리오든 같은 DB에 들어간다.
+// 저장 위치 해석. 규칙은 하나 — **사용자가 고른 페이지(rootId) 하나** 아래에 전부 둔다.
 //
-// 예전에는 "저장할 DB 하나 + 읽어올 DB 여럿"이었다. 루트를 나눠 쓰는 사람을 위한
-// 구조였는데, 고르는 화면이 어려워지고 스토리가 노션 여기저기 흩어졌다. 한 곳으로
-// 줄이면 고를 것도 하나고, 어디에 있는지 헷갈릴 일이 없다.
+//   <고른 페이지>
+//   ├─ N주차 회고 …      회고 초안 (api/notion/retros.ts, kind=retro)
+//   ├─ 시나리오/          시나리오 초안 (kind=scenario)
+//   ├─ 스토리/            일반 스토리 구상 (kind=story)
+//   └─ Twine Stories      twee 스토리 DB (ensureStoriesDb)
 //
-// 고른 적이 없어도 어딘가로는 저장돼야 한다. 시나리오 생성은 노션 연결만 요구하므로
-// (api/translate.ts) 저장 위치를 고르지 않은 채 스토리를 만들 수 있는데, 예전에는 그때
-// 동기화가 조용히 꺼져 브라우저에만 남았다. 그래서 아래 defaultDb로 기본값을 정한다.
+// 세션이 기억하는 선택은 rootId뿐이다. dbId는 그 아래에서 찾은 결과의 캐시이고, 루트가
+// 바뀌면 같이 버린다(dbRootId로 판별).
+//
+// 왜 이렇게까지 좁히나. 예전에는 (1) 루트와 DB를 따로 고를 수 있어 둘이 무관한 곳을
+// 가리켰고, (2) 고르지 않은 사용자에게는 워크스페이스 검색으로 "가장 최근에 편집한
+// Twine Stories DB"를 기본값으로 박았다. 공개 통합은 워크스페이스당 봇이 하나라 그
+// 검색에는 **다른 사람이 공유한 DB도 나온다** — 그래서 팀 워크스페이스에서는 모두가
+// 같은(남의) DB에 저장하고 서로의 스토리를 받아갔다. 기본값 추측을 없애고, 루트에서
+// DB를 유도하면 두 문제가 한 번에 사라진다: 자기 페이지를 고른 사람은 자기 DB를 쓰고,
+// DB는 늘 그 페이지 아래 한 곳에 있다.
 import type {ServerResponse} from 'node:http';
-import {searchStoriesDbs} from './notion';
+import {ensureStoriesDb} from './notion';
 import {Session, writeSession} from './session';
 
-// 저장 위치를 한 번도 고르지 않았을 때 쓸 DB. **이미 있는 stories DB만 쓴다.**
-//
-// 예전에는 하나도 못 찾으면 "공유된 페이지 중 가장 최근에 편집한 곳" 아래에 새로
-// 만들었다. 그게 DB를 노션 여기저기 흩뿌렸다 — 그때그때 마지막으로 만진 페이지가
-// 달라지니, 하루에 빈 "Twine Stories" DB가 두 개 생기고 스토리가 엉뚱한 곳에 쌓였다.
-// 위치를 잘못 추측해 만드는 것보다 물어보는 게 낫다. 그래서 못 찾으면 던지고,
-// status가 그 이유를 그대로 사용자에게 보여준다.
-//
-// 새로 만드는 것은 사용자가 저장 위치 화면에서 페이지를 직접 고를 때만 일어난다
-// (api/notion-sync/dbs.ts의 POST).
-export async function defaultDb(session: Session): Promise<{dbId: string}> {
-	const existing = await searchStoriesDbs(session.token);
+export const NO_ROOT_MESSAGE =
+	'스토리를 저장할 노션 페이지가 아직 정해지지 않았습니다. "저장 위치"에서 골라 주세요.';
 
-	if (!existing.length) {
-		throw new Error(
-			'노션에서 스토리를 저장할 곳을 찾지 못했습니다. "저장 위치"에서 골라 주세요.'
-		);
-	}
-
-	return {dbId: existing[0].id};
+// 저장 위치가 정해졌나. 옛 세션의 dbId(루트 없이 고른 DB)는 선택으로 치지 않는다 —
+// 그 DB가 어디 있는지, 누구 것인지 알 수 없다.
+export function hasRoot(session: Session): session is Session & {rootId: string} {
+	return !!session.rootId;
 }
 
-// 스토리를 읽고 쓰고 지우는 단 하나의 DB.
+// 루트를 고른다. 그 아래에 stories DB를 확보해(있으면 그것, 없으면 생성) 세션에 함께
+// 적는다. DB를 만드는 곳은 여기뿐이다 — 읽기 경로에서 만들면 화면을 여는 것만으로
+// 빈 DB가 생기던 적이 있다.
+export async function chooseRoot(
+	session: Session,
+	rootId: string,
+	res: ServerResponse
+): Promise<{rootId: string; dbId: string}> {
+	const dbId = await ensureStoriesDb(session.token, rootId);
+
+	session.rootId = rootId;
+	session.dbId = dbId;
+	session.dbRootId = rootId;
+	writeSession(res, session);
+
+	return {rootId, dbId};
+}
+
+// 스토리를 읽고 쓰고 지우는 단 하나의 DB. 캐시가 루트와 맞으면 그대로, 아니면 루트
+// 아래에서 다시 찾아 캐시한다.
+//
+// 캐시가 비어 있을 때도 ensureStoriesDb를 부르므로 DB가 없으면 만들어진다 — 다만 항상
+// 사용자가 고른 루트 아래이고, chooseRoot가 이미 만들어 둔 것이 정상 경로라 실제로는
+// 루트만 있고 DB 캐시가 없는 옛 세션에서만 일어난다.
 export async function currentDb(
 	session: Session,
 	res?: ServerResponse
 ): Promise<string> {
-	if (session.dbId) return session.dbId;
+	if (!hasRoot(session)) {
+		throw new Error(NO_ROOT_MESSAGE);
+	}
 
-	const {dbId} = await defaultDb(session);
+	if (session.dbId && session.dbRootId === session.rootId) {
+		return session.dbId;
+	}
 
-	remember(session, dbId, res, true);
-	return dbId;
-}
+	const dbId = await ensureStoriesDb(session.token, session.rootId);
 
-function remember(
-	session: Session,
-	dbId: string,
-	res?: ServerResponse,
-	auto = false
-) {
-	// 세션에 박아둔다 — 안 남기면 요청마다 노션을 다시 뒤진다.
 	session.dbId = dbId;
-	if (auto) session.autoRoot = true;
+	session.dbRootId = session.rootId;
 
-	if (res) writeSession(res, session);
+	if (res) {
+		writeSession(res, session);
+	}
+
+	return dbId;
 }

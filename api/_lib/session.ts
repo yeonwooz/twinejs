@@ -21,14 +21,19 @@ export const LLM_KEY_MAX_AGE = 60 * 60 * 12;
 export interface Session {
 	// Notion OAuth access token.
 	token: string;
-	// 스토리를 읽고 쓰는 단 하나의 stories DB id. 저장 위치는 한 곳뿐이다 —
-	// api/_lib/stories-db.ts 참고.
-	dbId?: string;
-	// 루트 페이지 id (위저드에서 고름).
+	// 저장 위치. 사용자가 고른 노션 페이지 하나 — 초안도 stories DB도 전부 이 아래에
+	// 들어간다(api/_lib/stories-db.ts). 이것이 세션에 남는 유일한 "선택"이고, 없으면
+	// 동기화는 꺼진다. 앱이 대신 정해주지 않는다.
 	rootId?: string;
-	// 이 루트를 사용자가 고른 게 아니라 앱이 기본값으로 정했나. 기본값이면 저장 위치를
-	// 한 번 알려줘야 한다 — 어디에 쌓이는지 모른 채 쓰게 두지 않는다.
-	autoRoot?: boolean;
+	// rootId 아래 stories DB id. 루트에서 언제든 다시 찾을 수 있는 값이라 캐시일 뿐이다.
+	dbId?: string;
+	// dbId를 찾았을 때의 rootId. 다르면 dbId는 예전 루트(또는 루트와 무관하게 고른 옛
+	// 방식)의 것이므로 버리고 다시 찾는다.
+	dbRootId?: string;
+	// 이 토큰을 발급한 노션 사용자 id(OAuth 응답의 owner.user.id). 같은 워크스페이스를
+	// 여럿이 쓰면 검색에 남이 공유한 페이지도 섞여 나오는데, 내가 만든 페이지를 앞에
+	// 세우는 데 쓴다.
+	userId?: string;
 	workspaceName?: string;
 	// LLM API 키(사용자가 앱에서 입력). Notion 토큰과 동일하게 이 봉인 쿠키에만 담긴다
 	// — 평문으로 Notion 페이지/클라 JS/서버 DB 어디에도 남기지 않는다.

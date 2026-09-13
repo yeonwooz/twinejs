@@ -1,5 +1,7 @@
 .notion-storage-dialog .storage-group {
 	margin-bottom: 12px;
+	max-height: 40vh;
+	overflow-y: auto;
 }
 
 .notion-storage-dialog .storage-group > h3 {
@@ -27,18 +29,12 @@
 	margin-left: 6px;
 }
 
-.notion-storage-dialog .storage-group {
-	max-height: 40vh;
-	overflow-y: auto;
-}
-
-/* 순차 공개 토글. 버튼처럼 보이지 않게 해서 아래 [여기에 저장하기]와 층위를 구분한다. */
-.notion-storage-dialog .storage-disclosure {
-	background: none;
-	border: 0;
-	cursor: pointer;
-	font: inherit;
-	padding: 4px 0;
-	text-align: left;
-	text-decoration: underline;
+/* 고른 페이지 아래에 무엇이 어떻게 놓이는지 보여주는 트리. 글로 설명하면 매번
+   헷갈리던 것이라 모양으로 보여준다. */
+.notion-storage-dialog .storage-layout {
+	font-size: 90%;
+	line-height: 1.5;
+	margin: 4px 0 12px 0;
+	opacity: 0.85;
+	white-space: pre;
 }

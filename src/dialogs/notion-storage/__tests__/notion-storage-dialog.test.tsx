@@ -11,16 +11,11 @@ jest.mock('../../../store/persistence/notion-sync/use-sync-status', () => ({
 
 const INFO = {
 	connected: true,
-	options: [
-		{id: 'db-a', title: '회고 스토리'},
-		{id: 'db-b', title: '창작 스토리'}
-	],
 	pages: [
-		{id: 'page-1', title: '스터디'},
-		{id: 'page-2', title: '새 루트'}
+		{id: 'page-1', title: '스터디', mine: true},
+		{id: 'page-2', title: '팀 회고', mine: false}
 	],
-	selected: {dbId: 'db-a', rootId: 'page-1'},
-	isDefault: false
+	selected: {rootId: 'page-1'}
 };
 
 function mockApi(info: unknown = INFO, post: unknown = {ok: true}) {
@@ -34,12 +29,14 @@ function mockApi(info: unknown = INFO, post: unknown = {ok: true}) {
 	return fetchMock;
 }
 
-function bodyOf(fetchMock: jest.Mock) {
+function postOf(fetchMock: jest.Mock) {
 	const call = fetchMock.mock.calls.find(
 		([, opts]) => (opts as RequestInit)?.method === 'POST'
 	);
 
-	return call ? JSON.parse(String((call[1] as RequestInit).body)) : undefined;
+	return call
+		? {url: call[0], body: JSON.parse(String((call[1] as RequestInit).body))}
+		: undefined;
 }
 
 describe('<NotionStorageDialog>', () => {
@@ -60,89 +57,82 @@ describe('<NotionStorageDialog>', () => {
 	// 새 컴퓨터에서 이 화면으로 먼저 들어오면 연결할 길이 없었다. 연결 링크가
 	// 회고/시나리오 위저드 안에만 있었기 때문이다.
 	it('연결이 안 됐으면 연결 버튼을 준다', async () => {
-		mockApi({connected: false, options: [], pages: []});
+		mockApi({connected: false, pages: [], selected: null});
 		renderComponent();
 
 		expect(await screen.findByText('노션 연결하기')).toBeInTheDocument();
 		expect(screen.queryByText('여기에 저장하기')).toBeNull();
 	});
 
-	// 초안은 페이지에, twee는 DB에 들어간다. 성격이 다르니 목록을 나눈다.
-	it('초안 페이지와 스토리 DB를 따로 고르게 한다', async () => {
+	// 고르는 것은 페이지 하나다. 초안도 DB도 그 아래에 정해진 모양으로 들어간다.
+	it('페이지 하나만 고르게 하고, 그 아래 배치를 보여준다', async () => {
 		mockApi();
 		renderComponent();
 
-		expect(
-			await screen.findByText('초안을 담아 둘 페이지')
-		).toBeInTheDocument();
-		expect(screen.getByText('스토리(twee)를 저장할 DB')).toBeInTheDocument();
+		expect(await screen.findByText('저장할 페이지')).toBeInTheDocument();
+		expect(screen.getAllByRole('radio')).toHaveLength(2);
 		expect(
 			screen.getByRole('radio', {name: /스터디/, checked: true})
 		).toBeInTheDocument();
-		expect(
-			screen.getByRole('radio', {name: /회고 스토리/, checked: true})
-		).toBeInTheDocument();
+		expect(screen.getByText(/Twine Stories \(DB\)/)).toBeInTheDocument();
+		expect(screen.getByText(/시나리오\//)).toBeInTheDocument();
 	});
 
-	it('초안 페이지를 바꾸면 rootId를 보낸다', async () => {
+	// 저장 위치를 고르는 길은 위저드와 같은 하나여야 한다 — 둘이 다른 것을 세션에
+	// 적던 것이 위치가 뒤죽박죽이 된 원인이었다.
+	it('페이지를 바꾸면 루트 엔드포인트에 pageId를 보낸다', async () => {
 		const fetchMock = mockApi();
 		const onClose = jest.fn();
 
 		renderComponent({onClose});
-		await screen.findByText('초안을 담아 둘 페이지');
-		await userEvent.click(screen.getByRole('radio', {name: /새 루트/}));
+		await screen.findByText('저장할 페이지');
+		await userEvent.click(screen.getByRole('radio', {name: /팀 회고/}));
 		await userEvent.click(screen.getByText('여기에 저장하기'));
 
 		await waitFor(() => expect(onClose).toHaveBeenCalled());
-		expect(bodyOf(fetchMock)).toEqual({rootId: 'page-2', dbId: 'db-a'});
+		expect(postOf(fetchMock)).toEqual({
+			url: '/api/notion/root',
+			body: {pageId: 'page-2'}
+		});
 	});
 
-	it('DB를 바꾸면 dbId를 보낸다', async () => {
-		const fetchMock = mockApi();
-
-		renderComponent();
-		await screen.findByText('스토리(twee)를 저장할 DB');
-		await userEvent.click(screen.getByRole('radio', {name: /창작 스토리/}));
-		await userEvent.click(screen.getByText('여기에 저장하기'));
-
-		await waitFor(() =>
-			expect(bodyOf(fetchMock)).toEqual({rootId: 'page-1', dbId: 'db-b'})
-		);
-	});
-
-	it('평소에는 DB 목록에 페이지를 섞지 않는다', async () => {
+	// 같은 워크스페이스를 여럿이 쓰면 남이 공유한 페이지도 섞여 나온다. 자기 것을
+	// 표시해 주고, 같은 페이지를 고르면 스토리를 함께 본다는 것을 알린다.
+	it('내가 만든 페이지를 표시하고 공유 워크스페이스 안내를 붙인다', async () => {
 		mockApi();
 		renderComponent();
-		await screen.findByText('스토리(twee)를 저장할 DB');
+		await screen.findByText('저장할 페이지');
 
-		// 페이지 라디오는 초안 쪽 하나씩만 있다(DB 쪽에 섞여 있지 않다).
-		expect(screen.getAllByRole('radio', {name: /새 루트/})).toHaveLength(1);
+		expect(screen.getByText('내가 만든 페이지')).toBeInTheDocument();
+		expect(
+			screen.getByText(/같은 페이지를 고른 사람끼리는 스토리를 함께/)
+		).toBeInTheDocument();
 	});
 
-	it('펼쳐서 페이지를 고르면 그 아래에 만든다', async () => {
-		const fetchMock = mockApi();
-
+	it('전부 내 페이지면 공유 워크스페이스 안내를 붙이지 않는다', async () => {
+		mockApi({
+			...INFO,
+			pages: INFO.pages.map(p => ({...p, mine: true}))
+		});
 		renderComponent();
-		await screen.findByText('스토리(twee)를 저장할 DB');
-		await userEvent.click(screen.getByText('› 다른 곳에 새로 만들기'));
-		await userEvent.click(
-			screen.getAllByRole('radio', {name: /새 루트/})[1] ??
-				screen.getByRole('radio', {name: /새 루트/})
-		);
-		await userEvent.click(screen.getByText('여기에 저장하기'));
+		await screen.findByText('저장할 페이지');
 
-		await waitFor(() =>
-			expect(bodyOf(fetchMock)).toEqual({
-				rootId: 'page-1',
-				createDbUnder: 'page-2'
-			})
-		);
+		expect(screen.queryByText(/같은 페이지를 고른 사람끼리는/)).toBeNull();
+	});
+
+	it('공유된 페이지가 없으면 다시 연결하라고 안내한다', async () => {
+		mockApi({connected: true, pages: [], selected: null});
+		renderComponent();
+
+		expect(
+			await screen.findByText(/공유된 페이지가 없습니다/)
+		).toBeInTheDocument();
 	});
 
 	it('바꾼 게 없으면 저장 버튼이 눌리지 않는다', async () => {
 		mockApi();
 		renderComponent();
-		await screen.findByText('초안을 담아 둘 페이지');
+		await screen.findByText('저장할 페이지');
 
 		expect(
 			screen.getByText('여기에 저장하기').closest('button')
@@ -167,7 +157,7 @@ describe('<NotionStorageDialog>', () => {
 
 		const {container} = renderComponent();
 
-		await screen.findByText('초안을 담아 둘 페이지');
+		await screen.findByText('저장할 페이지');
 		expect(await axe(container)).toHaveNoViolations();
 	});
 });

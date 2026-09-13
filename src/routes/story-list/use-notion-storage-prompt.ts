@@ -7,7 +7,9 @@
 import * as React from 'react';
 import {NotionStorageDialog, useDialogsContext} from '../../dialogs';
 
-const PROMPTED_KEY = 'twine-notion-storage-prompted';
+// 키에 판을 붙인다. 저장 위치 모델이 "페이지 하나"로 바뀌면서 예전에 DB만 골라 둔
+// 사람은 다시 골라야 하는데, 옛 키가 남아 있으면 그 사람에게는 영영 묻지 않게 된다.
+const PROMPTED_KEY = 'twine-notion-storage-prompted-v2';
 
 export function useNotionStoragePrompt() {
 	const {dispatch} = useDialogsContext();

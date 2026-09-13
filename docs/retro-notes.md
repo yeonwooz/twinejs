@@ -140,3 +140,25 @@ Notion에 쓴 주간 회고를 Twine(twinejs)의 **twee 인터랙티브 픽션**
 - OpenAI 경로는 실제 키로 미검증(특히 `gpt-5`의 strict json_schema). 안전한 건 `gpt-4o(-mini)`.
 - 로컬 `npm start`(retro.mjs)는 아직 Anthropic 전용 · effort 미적용.
 - 배포(Vercel)에서만 `/api/*` 동작 — 로컬 `npm run dev`는 `/__notion-sync/*`만.
+
+## 2026-09-13 저장 위치 모델 정리 (모두가 같은 DB를 보던 문제)
+
+증상 둘: (1) 누구나 같은 노션 DB를 본다. (2) 초안 페이지·stories DB의 위치가 뒤죽박죽.
+
+원인:
+- 공개 통합은 **워크스페이스당 봇이 하나**라, 한 사용자의 토큰으로 검색하면 같은
+  워크스페이스의 다른 사람이 공유한 페이지·DB까지 나온다. 저장 위치를 안 고른 사용자에게
+  "검색 결과 첫 `Twine Stories` DB"를 기본값으로 박던 `defaultDb`가 모두를 같은(남의) DB로
+  보냈다.
+- 루트 페이지(`rootId`)와 DB(`dbId`)를 따로 고를 수 있었고, 고르는 엔드포인트도 둘
+  (`api/notion/root.ts`, `api/notion-sync/dbs.ts`)이라 세션에 서로 다른 조합이 적혔다.
+
+결정:
+- **선택은 페이지 하나.** 세션은 `rootId`만 기억하고 DB는 그 아래에서 유도한다(`dbId`는
+  캐시, `dbRootId`로 유효성 판별). 배치는 `api/_lib/stories-db.ts` 머리말의 트리 하나로 고정.
+- **기본값 추측 없음.** 안 고르면 `enabled:false` + 이유. 홈 첫 진입에 한 번 묻는다.
+- 고르는 곳은 `api/notion/root.ts` 하나(`dbs.ts` 삭제 → 서버리스 함수 11개). 저장 위치
+  화면과 위저드가 같은 것을 부른다.
+- OAuth 응답의 `owner.user.id`를 세션에 두고, 후보 페이지에 "내가 만든 페이지"를 표시해 앞에
+  세운다. 같은 페이지를 고른 사람끼리는 스토리를 함께 본다고 화면에 안내한다.
+- 옛 세션(dbId만, 또는 루트와 무관한 dbId) 은 미설정으로 취급해 다시 고르게 한다.
