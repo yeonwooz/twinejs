@@ -220,7 +220,9 @@ export const SettingsDialog: React.FC<DialogComponentProps> = props => {
 										onChange={() => setRoot(page.id)}
 										type="radio"
 									/>
-									{page.title}
+									<span className="label-text" title={page.title}>
+										{page.title}
+									</span>
 								</label>
 							))}
 						</div>
@@ -242,7 +244,9 @@ export const SettingsDialog: React.FC<DialogComponentProps> = props => {
 												onChange={() => setDb(option.id)}
 												type="radio"
 											/>
-											{option.title}
+											<span className="label-text" title={option.title}>
+												{option.title}
+											</span>
 											{option.id === info.selected?.dbId && (
 												<span className="settings-note">현재 저장 위치</span>
 											)}
@@ -281,7 +285,9 @@ export const SettingsDialog: React.FC<DialogComponentProps> = props => {
 												onChange={() => setCreateUnder(page.id)}
 												type="radio"
 											/>
-											{page.title}
+											<span className="label-text" title={page.title}>
+												{page.title}
+											</span>
 										</label>
 									))}
 								</>

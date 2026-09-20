@@ -117,14 +117,31 @@ connect/root/apikey 단계, "저장 위치" 다이얼로그, 홈 첫 진입 프�
 했는데 저장 위치나 AI 키가 아직 없으면 홈 첫 진입에 한 번 저절로 뜬다
 (`use-setup-prompt.ts`, 한 번 뜬 뒤로는 안 뜬다).
 
-### `/api/*`는 배포 전용 — `fetchJson`을 쓴다
+### `/api/*`는 로컬에서도 돈다 (`vite-plugin-api-dev.ts`)
 
-OAuth·루트/DB 선택·AI 키·retros/draft/translate는 전부 Vercel functions라
-`npm run dev`(vite만)에서는 없다. vite는 없는 GET에 **index.html을 200으로** 돌려주므로
-`response.ok`만 보면 통과하고 `json()`에서 `Unexpected token '<'`가 화면에 그대로 찍힌다
-(실제로 설정 화면에 찍혔다). `src/util/json-fetch.ts`의 `fetchJson`이 상태 코드와
-content-type을 함께 보고, 후자가 JSON이 아니면 "배포 환경에서만 동작한다"고 말한다.
-`/api/*`를 부르는 곳은 전부 이걸 쓴다.
+OAuth·루트/DB 선택·AI 키·retros/draft/translate는 배포에서 Vercel functions다. 예전에는
+`npm run dev`에 그게 없어서 위저드·설정·저장 위치 고르기가 통째로 안 돌았고, 보려면
+`vercel dev`(로그인+프로젝트 링크)를 써야 했다. 지금은 dev 플러그인이 `api/` 파일을
+그대로 서빙한다 — `npm run dev` 하나면 끝이다.
+
+- URL → 파일(`[id].ts` 동적 구간 포함), `req.query`/`req.body`, `res.status().json()`만
+  흉내 낸다. **api/ 코드는 손대지 않는다.**
+- **`.env.local`의 `NOTION_TOKEN`으로 세션 쿠키를 만들어 끼운다** — 로컬에서 노션 OAuth를
+  돌지 않아도 된다. 진짜 쿠키가 이미 있으면 건드리지 않는다.
+- `loadEnv`는 클라 번들용이라 `process.env`에 안 올라간다. 플러그인이 옮겨 준다
+  (`COOKIE_SECRET` 없다고 터지던 이유).
+- 불러올 때 **vite의 `ssrLoadModule`을 쓰지 않는다.** `nodePolyfills`가 `node:crypto`를
+  브라우저 shim(CJS)으로 바꿔 둬서 `exports is not defined`로 깨진다. esbuild로 직접
+  번들하되 **출력은 `node_modules/.twine-api-dev/` 안에** 둔다 — OS 임시 디렉터리에 두면
+  external로 남긴 패키지(`@anthropic-ai/sdk` 등)를 node가 못 찾는다.
+- `/__notion-sync/*`는 `vercel.json`의 rewrite를 따라 세션 기반 함수로 간다. 그래서
+  로컬에서 본 화면이 배포와 같다. 토큰만 쓰는 옛 미들웨어(`vite-plugin-notion-sync.ts`)는
+  뒤에 남아 있지만 이 플러그인이 먼저 잡는다.
+
+그래도 클라는 응답이 JSON인지 확인한다(`src/util/json-fetch.ts`의 `fetchJson`). 플러그인이
+꺼진 환경이나 오타 난 경로에서 vite가 index.html을 200으로 돌려주면 `response.ok`만 보고
+통과해 `json()`에서 `Unexpected token '<'`가 화면에 그대로 찍힌다 — 실제로 설정 화면에
+찍혔다. `/api/*`를 부르는 곳은 전부 `fetchJson`을 쓴다.
 
 ### 저장 위치는 스토리마다
 

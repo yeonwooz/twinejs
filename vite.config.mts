@@ -5,6 +5,7 @@ import checker from 'vite-plugin-checker';
 import {nodePolyfills} from 'vite-plugin-node-polyfills';
 import {VitePWA} from 'vite-plugin-pwa';
 import packageJson from './package.json';
+import {apiDev} from './vite-plugin-api-dev';
 import {notionSync} from './vite-plugin-notion-sync';
 
 export default defineConfig({
@@ -32,6 +33,9 @@ export default defineConfig({
 			{include: [], globals: {global: true}}
 		),
 		react(),
+		// notionSync보다 먼저 -- /__notion-sync/*를 배포와 같은 세션 기반 함수로 보낸다.
+		// 그래야 로컬에서 본 화면이 배포에서도 같다.
+		apiDev(),
 		notionSync(),
 		VitePWA({
 			manifest: {

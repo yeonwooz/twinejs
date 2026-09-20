@@ -59,3 +59,21 @@
 	min-width: 0;
 	padding: 4px;
 }
+
+/* 노션 페이지 제목은 한 문단짜리일 수 있다(데일리 노트 등). 라디오 목록에 그대로 쏟으면
+   화면을 통째로 먹어 무엇을 고르는 화면인지 알 수 없다. 한 줄로 자르고 전문은 title에. */
+.settings-dialog .settings-group label {
+	align-items: baseline;
+	display: flex;
+	gap: 6px;
+}
+
+.settings-dialog .settings-group label > span.label-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.settings-dialog .settings-group label > input {
+	flex: 0 0 auto;
+}

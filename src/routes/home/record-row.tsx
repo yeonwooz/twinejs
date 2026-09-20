@@ -39,7 +39,7 @@ function agoLabel(date?: Date) {
 
 function shapeLabel(record: HomeRecord) {
 	if (record.kind === 'draft') {
-		return `쓰다 만 지 ${agoLabel(record.editedAt) || '얼마 안 됨'}`;
+		return `초안 · ${agoLabel(record.editedAt) || '방금'}`;
 	}
 
 	switch (record.shape.type) {
