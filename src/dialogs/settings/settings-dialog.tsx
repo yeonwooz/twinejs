@@ -15,7 +15,11 @@ import {ButtonBar} from '../../components/container/button-bar';
 import {CardContent} from '../../components/container/card';
 import {DialogCard} from '../../components/container/dialog-card';
 import {IconButton} from '../../components/control/icon-button';
-import {forgetSyncStatus} from '../../store/persistence/notion-sync';
+import {
+	forgetSyncStatus,
+	pinStoriesToCurrentDb
+} from '../../store/persistence/notion-sync';
+import {forgetStoriesDbs} from '../../routes/home/use-stories-dbs';
 import {useSyncStatus} from '../../store/persistence/notion-sync/use-sync-status';
 import {fetchJson} from '../../util/json-fetch';
 import {DialogComponentProps} from '../dialogs.types';
@@ -91,6 +95,10 @@ export const SettingsDialog: React.FC<DialogComponentProps> = props => {
 	async function save() {
 		setBusy(true);
 		try {
+			// 기본 저장 위치가 바뀌기 전에, 지금 있는 스토리들이 어디 있었는지 적어 둔다.
+			// 안 그러면 바꾸는 순간 전부 새 DB를 가리키고, 노션에 멀쩡히 있는 스토리가
+			// 앱에서 사라진 것처럼 보인다.
+			pinStoriesToCurrentDb();
 			await fetchJson('/api/notion-sync/dbs', {
 				body: {
 					...(root ? {rootId: root} : {}),
@@ -99,6 +107,7 @@ export const SettingsDialog: React.FC<DialogComponentProps> = props => {
 				}
 			});
 			forgetSyncStatus();
+			forgetStoriesDbs();
 			props.onClose();
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));

@@ -1,0 +1,37 @@
+@import '../../styles/colors.css';
+
+.story-db {
+	align-items: center;
+	display: inline-flex;
+	gap: 6px;
+	max-width: 26em;
+}
+
+/* 제목이 길어도 줄을 밀어내지 않게. 어느 DB인지는 메뉴를 열면 온전히 보인다.
+   IconButton은 라벨을 감싸는 요소 없이 그대로 두므로 버튼에 직접 건다.
+   **직속 자식만** 잡는다 -- MenuButton은 펼친 메뉴도 같은 자리에 렌더하므로,
+   범위를 안 좁히면 메뉴 항목까지 "Twine Stories …"로 잘려 뭘 고르는지 알 수 없다. */
+.story-db > button.icon-button {
+	display: inline-block;
+	/* 에러 문구가 붙어도 버튼이 찌그러져 세 줄이 되지 않게 -- 줄어들지 않는다. */
+	flex: 0 0 auto;
+	max-width: 12em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* 실패 이유는 줄 안에 그대로 붙인다 — 어디에도 안 뜨고 사라지는 게 이 앱의 옛 사고였다.
+   다만 두 줄까지만 보여준다. 노션 원문이 길면 목록 한 줄을 통째로 무너뜨린다(겪었다).
+   전문은 title로 붙여 두니 마우스를 올리면 볼 수 있다. */
+.story-db-error {
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	color: var(--dark-red);
+	display: -webkit-box;
+	font-size: 11px;
+	line-height: 1.3;
+	max-width: 13em;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+}

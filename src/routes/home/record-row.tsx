@@ -5,7 +5,7 @@ import * as React from 'react';
 import {useHistory} from 'react-router-dom';
 import {IconButton} from '../../components/control/icon-button';
 import {HomeRecord} from '../../store/records';
-import {MoveStoryButton} from './move-story-button';
+import {StoryDbButton} from './story-db-button';
 import {RecordShapeGlyph} from './record-shape';
 import './record-row.css';
 
@@ -52,33 +52,12 @@ function shapeLabel(record: HomeRecord) {
 	}
 }
 
-// 헤더의 표시등은 앱 전체가 저장되는지만 말한다. 스토리 하나가 예전 저장 위치에
-// 남아 있거나 아예 올라간 적이 없는 건 지금까지 어디에도 안 보였다.
-function locationLabel(record: HomeRecord, moved: boolean) {
-	if (record.kind !== 'story' || moved) {
-		return undefined;
-	}
-
-	switch (record.location) {
-		case 'elsewhere':
-			return '다른 곳에 저장됨';
-		case 'none':
-			return '노션에 없음';
-		default:
-			return undefined;
-	}
-}
-
 export interface RecordRowProps {
 	record: HomeRecord;
 }
 
 export const RecordRow: React.FC<RecordRowProps> = ({record}) => {
 	const history = useHistory();
-	// 방금 옮긴 줄. useRecords의 location은 다음 로드까지 예전 값이라, 버튼이 "옮김"을
-	// 띄우는 동안 옆에서는 "다른 곳에 저장됨"이라고 우기는 꼴이 된다.
-	const [moved, setMoved] = React.useState(false);
-	const label = locationLabel(record, moved);
 
 	return (
 		<li className="record-row">
@@ -90,16 +69,11 @@ export const RecordRow: React.FC<RecordRowProps> = ({record}) => {
 						shape={record.kind === 'story' ? record.shape : undefined}
 					/>
 					<span className="detail">{shapeLabel(record)}</span>
-					{label && <span className="detail warn">· {label}</span>}
 				</span>
 			</span>
 			<span className="actions">
 				{record.kind === 'story' && (
-					<MoveStoryButton
-						location={record.location}
-						onMoved={() => setMoved(true)}
-						storyId={record.id}
-					/>
+					<StoryDbButton dbId={record.dbId} storyId={record.id} />
 				)}
 				{record.kind === 'draft' ? (
 					<IconButton

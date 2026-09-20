@@ -48,8 +48,3 @@
 	flex: 0 0 auto;
 	gap: 4px;
 }
-
-/* 저장 위치가 어긋난 줄만 눈에 걸리게. 나머지 detail과 같은 크기로 두되 색만 다르다. */
-.record-row .detail.warn {
-	color: var(--dark-orange);
-}

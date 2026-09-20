@@ -4,7 +4,8 @@ import {ensureStoriesDb, searchPages} from '../_lib/notion';
 
 // GET: OAuth 동의 때 공유한 페이지 목록(루트 후보).
 // POST {pageId}: 루트 선택 → 그 아래 stories DB 확보(없으면 생성) → 세션에
-// rootId·dbId 기록. 회고든 창작 시나리오든 이 DB 하나를 쓴다 — 저장 위치는 한 곳이다.
+// rootId·dbId 기록. 여기서 정하는 dbId는 **기본** 저장 위치다 — 스토리별로 다른 DB를
+// 고를 수 있고, 그 지정은 클라가 들고 `?db=`로 실어 보낸다(api/_lib/stories-db.ts).
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const s = getSession(req);
 	if (!s?.token) {

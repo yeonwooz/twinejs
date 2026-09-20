@@ -134,6 +134,19 @@ function pageMeta(page: any, storyId: string) {
 
 // Timestamps only -- no per-page block fetch. This is what the client polls, so
 // it has to stay one HTTP request no matter how many stories exist.
+// ?db=a,b,c + 기본 DB. 폴링이 DB마다 노션을 찌르므로 상한을 둔다(api/_lib/stories-db.ts의
+// MAX_READ_DBS와 같은 값).
+const MAX_READ_DBS = 8;
+
+function readDbIds(url: URL, fallback: string) {
+	const extra = (url.searchParams.get('db') ?? '')
+		.split(',')
+		.map(id => id.trim())
+		.filter(id => id && id !== fallback);
+
+	return [fallback, ...new Set(extra)].slice(0, MAX_READ_DBS);
+}
+
 async function listStoryMeta(config: NotionSyncConfig) {
 	return (await queryStoryPages(config)).map(({page, storyId}) =>
 		pageMeta(page, storyId)
@@ -330,17 +343,31 @@ export function notionSync(): Plugin {
 					) {
 						// ?meta=1 is the cheap poll: timestamps without twee bodies.
 						const meta = !!url.searchParams.get('meta');
+						// Stories can sit in databases other than the configured default --
+						// the client picks a destination per story and tells us which ones
+						// to read via ?db=a,b,c.
+						const dbIds = readDbIds(url, config.databaseId);
 						// Each row carries the database it came from; the client uses that
 						// to scope its "deleted in Notion" check to what this listing
-						// actually covered, so switching databases can't wipe local copies.
-						const listed = meta
-							? await listStoryMeta(config)
-							: await listStories(config);
+						// actually covered, so a database we failed to read can't wipe
+						// local copies.
+						const perDb = await Promise.all(
+							dbIds.map(async databaseId => {
+								const scoped = {...config, databaseId};
 
-						return respond(
-							200,
-							listed.map(row => ({...row, dbId: config.databaseId}))
+								try {
+									const listed = meta
+										? await listStoryMeta(scoped)
+										: await listStories(scoped);
+
+									return listed.map(row => ({...row, dbId: databaseId}));
+								} catch {
+									return [];
+								}
+							})
 						);
+
+						return respond(200, perDb.flat());
 					}
 
 					const storyMatch = /^\/__notion-sync\/stories\/([^/?]+)$/.exec(
@@ -349,11 +376,17 @@ export function notionSync(): Plugin {
 
 					if (storyMatch) {
 						const storyId = decodeURIComponent(storyMatch[1]);
+						// ?db= names the destination for this one story; without it the
+						// configured default is used.
+						const target = {
+							...config,
+							databaseId: url.searchParams.get('db') || config.databaseId
+						};
 
 						if (req.method === 'PUT') {
 							const payload: StoryPayload = await readJsonBody(req);
 							const wrote = await enqueueWrite(() =>
-								upsertStory(config, storyId, payload)
+								upsertStory(target, storyId, payload)
 							);
 
 							server.config.logger.info(
@@ -365,7 +398,7 @@ export function notionSync(): Plugin {
 						}
 
 						if (req.method === 'DELETE') {
-							await enqueueWrite(() => archiveStory(config, storyId));
+							await enqueueWrite(() => archiveStory(target, storyId));
 							server.config.logger.info(
 								`[notion-sync] Archived story ${storyId}`
 							);

@@ -1,12 +1,13 @@
 import type {VercelRequest, VercelResponse} from '@vercel/node';
 import {getSession} from '../../_lib/session';
 import {archiveStory, upsertStory} from '../../_lib/notion';
-import {currentDb} from '../../_lib/stories-db';
+import {targetDb} from '../../_lib/stories-db';
 
 // PUT   /__notion-sync/stories/:id  {ifid,name,twee} → upsert (Story ID로 매칭)
 // DELETE /__notion-sync/stories/:id                  → archive
 //
-// 저장 위치는 한 곳이므로 저장도 삭제도 그 DB 하나만 본다.
+// `?db=`로 목적지를 지정할 수 있다 — 스토리별로 저장 위치를 따로 고르는 경우다.
+// 지정이 없으면 기본 저장 위치로 간다. 지정된 값은 targetDb가 실재하는지 확인한다.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const s = getSession(req);
 	if (!s?.token || !(s.dbId || s.rootId)) {
@@ -16,6 +17,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const storyId = String(
 		Array.isArray(req.query.id) ? req.query.id[0] : req.query.id
 	);
+	const requestedDb = Array.isArray(req.query.db)
+		? req.query.db[0]
+		: req.query.db;
 
 	try {
 		if (req.method === 'PUT') {
@@ -28,14 +32,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 				res.status(400).json({error: 'twee 누락'});
 				return;
 			}
-			await upsertStory(s.token, await currentDb(s, res), storyId, {
+			await upsertStory(s.token, await targetDb(s, requestedDb, res), storyId, {
 				ifid: body.ifid,
 				name: body.name,
 				twee: body.twee
 			});
 			res.status(200).json({ok: true});
 		} else if (req.method === 'DELETE') {
-			await archiveStory(s.token, await currentDb(s, res), storyId);
+			await archiveStory(s.token, await targetDb(s, requestedDb, res), storyId);
 			res.status(200).json({ok: true});
 		} else {
 			res.status(405).json({error: 'method not allowed'});

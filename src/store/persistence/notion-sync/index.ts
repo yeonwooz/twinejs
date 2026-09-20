@@ -123,13 +123,33 @@ async function isEnabled() {
 	return enabled;
 }
 
-/** 서버가 돌려준 이유를 꺼낸다. 없으면 상태 코드라도 보여준다. */
+/**
+ * 서버가 돌려준 이유를 꺼낸다. 없으면 상태 코드라도 보여준다.
+ *
+ * 노션 API 오류는 그대로 내보내면 JSON 덩어리가 화면에 쏟아진다 -- 실제로 목록의 한 줄을
+ * 통째로 무너뜨렸다. 자주 나오는 모양은 사람 문장으로 바꾼다. 상태는 화면에 보이라고
+ * 들고 있는 것이지 읽을 수 없는 걸 보여주라고 있는 게 아니다.
+ */
+function humanize(message: string) {
+	if (/object_not_found|Could not find database/i.test(message)) {
+		return '그 DB를 찾을 수 없어요. 노션에서 통합에 공유돼 있는지 확인해 주세요.';
+	}
+
+	if (/unauthorized|restricted_resource/i.test(message)) {
+		return '그 DB에 쓸 권한이 없어요. 노션에서 통합에 공유해 주세요.';
+	}
+
+	// 알 수 없는 오류는 그대로 보여주되 한 줄 길이로 자른다 -- 통째로 숨기면 무슨 일이
+	// 일어났는지 알 길이 없어진다.
+	return message.length > 160 ? `${message.slice(0, 160)}…` : message;
+}
+
 async function errorOf(response: Response) {
 	try {
 		const body = await response.json();
 
 		if (body?.error) {
-			return String(body.error);
+			return humanize(String(body.error));
 		}
 	} catch {
 		// JSON이 아니면 상태 코드만 쓴다.
@@ -138,69 +158,43 @@ async function errorOf(response: Response) {
 	return `노션 저장 실패 (${response.status})`;
 }
 
-// 스토리를 마지막으로 성공적으로 밀어 넣은 DB. 순수 정보용이다 -- 삭제 판단에 쓰는
-// 장부(SYNCED_IDS_KEY)와 섞지 않는다. 그쪽은 틀리면 스토리가 사라지는 물건이라
-// "본 적 있다"는 의미를 흐리고 싶지 않다.
-const PUSHED_DB_KEY = 'twine-notion-pushed-db';
+// 스토리별 저장 위치. 기본 저장 위치(세션의 dbId)와 다른 곳을 고른 스토리만 적힌다.
+//
+// 삭제 판단에 쓰는 장부(SYNCED_IDS_KEY)와 섞지 않는다. 그쪽은 "원격 목록에서 본 적
+// 있다"는 관측이고 틀리면 스토리가 사라진다. 이건 "사용자가 여기다 두기로 했다"는
+// 의도다 -- 성격이 다르다.
+const STORY_DB_KEY = 'twine-notion-story-db';
 
-function readPushedDbs(): Record<string, string> {
+function readStoryDbs(): Record<string, string> {
 	try {
-		return JSON.parse(window.localStorage.getItem(PUSHED_DB_KEY) ?? '{}');
+		return JSON.parse(window.localStorage.getItem(STORY_DB_KEY) ?? '{}');
 	} catch {
 		return {};
 	}
 }
 
-function rememberPushedDb(storyId: string, dbId?: string) {
-	if (!dbId) {
-		return;
-	}
-
+function writeStoryDbs(map: Record<string, string>) {
 	try {
-		window.localStorage.setItem(
-			PUSHED_DB_KEY,
-			JSON.stringify({...readPushedDbs(), [storyId]: dbId})
-		);
+		window.localStorage.setItem(STORY_DB_KEY, JSON.stringify(map));
 	} catch {
-		// 못 적어도 진행은 막지 않는다 -- 위치 표시만 "모름"으로 떨어진다.
+		// 못 적어도 진행은 막지 않는다 -- 기본 저장 위치로 떨어질 뿐이다.
 	}
 }
 
-export type StoryLocation = 'here' | 'elsewhere' | 'none' | 'unknown';
-
-/**
- * 이 스토리가 지금 저장 위치에 있나.
- *
- * 두 곳을 본다: 푸시 기록(방금 올린 것)과 pull 장부(원격 목록에서 본 것). 둘 다 없으면
- * 노션에 올라간 적이 없다고 본다 -- 저장 위치를 바꾸기 전에 만든 스토리, 동기화가 꺼져
- * 있던 동안 만든 스토리가 여기 해당한다.
- */
-export function storyLocation(storyId: string): StoryLocation {
-	if (!enabled || !currentDbId) {
-		return 'unknown';
-	}
-
-	const seen =
-		readPushedDbs()[storyId] ??
-		readSyncedEntries().find(entry => entry.storyId === storyId)?.dbId;
-
-	if (!seen) {
-		return 'none';
-	}
-
-	return seen === currentDbId ? 'here' : 'elsewhere';
+/** 이 스토리가 향할 DB. 따로 고른 적이 없으면 기본 저장 위치. */
+export function storyDbId(storyId: string) {
+	return readStoryDbs()[storyId] ?? currentDbId;
 }
 
 /**
- * 스토리를 지금 저장 위치로 밀어 넣는다. 디바운스를 건너뛰고 결과를 돌려주는
- * syncStory -- 홈의 "여기로 옮기기" 버튼이 성공/실패를 그 자리에서 말해야 한다.
+ * 이 스토리를 어느 DB에 둘지 정하고, 바로 그쪽으로 밀어 넣는다.
  *
  * 옛 DB의 행은 지우지 않는다. 저장 위치를 바꿔도 예전 것은 남긴다는 원칙과 같고,
  * 되돌릴 수 없는 쪽이 삭제다.
  */
-export async function moveStoryHere(storyId: string) {
-	// 동기화가 꺼져 있으면 syncStory가 조용히 돌아선다 -- 그걸 성공으로 읽으면 안 된다.
-	// 버튼이 "옮겼다"고 말해 놓고 아무 데도 안 간 것이 이 앱이 반복해 온 사고다.
+export async function setStoryDb(storyId: string, dbId: string) {
+	// 꺼져 있으면 syncStory가 조용히 돌아선다 -- 그걸 성공으로 읽으면 "옮겼다"고 말해
+	// 놓고 아무 데도 안 간다. 이 앱이 반복해 온 사고다.
 	if (!(await isEnabled())) {
 		return {
 			ok: false as const,
@@ -209,17 +203,84 @@ export async function moveStoryHere(storyId: string) {
 		};
 	}
 
-	cancelPendingSync(storyId);
-	await syncStory(storyId);
+	const previous = readStoryDbs();
 
-	return status.failing
-		? {ok: false as const, reason: status.reason}
-		: {ok: true as const};
+	writeStoryDbs(
+		dbId === currentDbId
+			? // 기본 저장 위치로 되돌리는 것은 "지정 없음"이다 -- 굳이 적어두지 않는다.
+				Object.fromEntries(
+					Object.entries(previous).filter(([id]) => id !== storyId)
+				)
+			: {...previous, [storyId]: dbId}
+	);
+
+	cancelPendingSync(storyId);
+
+	if (await syncStory(storyId)) {
+		return {ok: true as const};
+	}
+
+	// 못 옮겼으면 지정도 되돌린다 -- 안 그러면 이후 저장이 계속 그쪽으로 향한다.
+	writeStoryDbs(previous);
+
+	return {
+		ok: false as const,
+		reason: status.reason ?? '스토리를 찾지 못해 옮기지 못했어요.'
+	};
 }
 
-async function syncStory(storyId: string) {
-	if (!(await isEnabled())) {
+/**
+ * 지금 있는 스토리들을 **지금** 저장 위치에 못 박는다. 기본 저장 위치를 바꾸기 직전에
+ * 부른다.
+ *
+ * 안 하면 기본값을 바꾸는 순간 예전 스토리 전부가 "새 DB에 있다"고 잘못 가리키고, 읽기도
+ * 새 DB만 하게 돼 노션에 멀쩡히 있는 스토리가 앱에서 사라진 것처럼 보인다. 바꾼다고
+ * 예전 것이 따라 옮겨가지는 않는다 -- 그러니 어디 있었는지를 적어 둔다.
+ */
+export function pinStoriesToCurrentDb() {
+	if (!currentDbId) {
 		return;
+	}
+
+	const map = readStoryDbs();
+
+	for (const story of lastState) {
+		if (!map[story.id]) {
+			map[story.id] = currentDbId;
+		}
+	}
+
+	writeStoryDbs(map);
+}
+
+/**
+ * 읽어야 할 DB들 -- 기본 저장 위치 말고 따로 지정된 것들. 서버에 ?db=로 넘긴다.
+ * 어느 스토리가 어디 있는지는 여기에만 있으므로 클라가 알려줘야 한다.
+ */
+function extraDbParam() {
+	const extra = [...new Set(Object.values(readStoryDbs()))].filter(
+		id => id && id !== currentDbId
+	);
+
+	return extra.length ? `db=${extra.map(encodeURIComponent).join(',')}` : '';
+}
+
+/** 목록 요청 주소에 읽을 DB들을 붙인다. */
+function listUrl(base: string) {
+	const extra = extraDbParam();
+
+	if (!extra) {
+		return base;
+	}
+
+	return `${base}${base.includes('?') ? '&' : '?'}${extra}`;
+}
+
+/** 밀어 넣었으면 true. 꺼져 있거나 스토리가 이미 사라졌으면 false -- 호출부가 그걸
+ *  성공으로 읽으면 "저장했다"고 말해 놓고 아무 데도 안 간다. */
+async function syncStory(storyId: string): Promise<boolean> {
+	if (!(await isEnabled())) {
+		return false;
 	}
 
 	let story: Story;
@@ -228,12 +289,16 @@ async function syncStory(storyId: string) {
 		story = storyWithId(lastState, storyId);
 	} catch {
 		// The story was deleted before the debounced sync fired.
-		return;
+		return false;
 	}
+
+	const target = storyDbId(storyId);
 
 	try {
 		const response = await fetch(
-			`/__notion-sync/stories/${encodeURIComponent(storyId)}`,
+			`/__notion-sync/stories/${encodeURIComponent(storyId)}${
+				target ? `?db=${encodeURIComponent(target)}` : ''
+			}`,
 			{
 				method: 'PUT',
 				headers: {'Content-Type': 'application/json'},
@@ -252,16 +317,17 @@ async function syncStory(storyId: string) {
 
 			setStatus({failing: true, reason});
 			console.warn(`Notion sync of story ${storyId} failed: ${reason}`);
-			return;
+			return false;
 		}
 
-		rememberPushedDb(storyId, currentDbId);
 		setStatus({failing: false, reason: undefined});
+		return true;
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);
 
 		setStatus({failing: true, reason});
 		console.warn(`Notion sync of story ${storyId} failed`, error);
+		return false;
 	}
 }
 
@@ -291,8 +357,11 @@ async function archiveStory(storyId: string) {
 	}
 
 	try {
+		const target = storyDbId(storyId);
 		const response = await fetch(
-			`/__notion-sync/stories/${encodeURIComponent(storyId)}`,
+			`/__notion-sync/stories/${encodeURIComponent(storyId)}${
+				target ? `?db=${encodeURIComponent(target)}` : ''
+			}`,
 			{method: 'DELETE'}
 		);
 
@@ -575,7 +644,9 @@ export async function mergeStoriesFromNotion(
 		return {stories: localStories, deletedIds: []};
 	}
 
-	const remote = await fetchRemote<RemoteStory>('/__notion-sync/stories');
+	const remote = await fetchRemote<RemoteStory>(
+		listUrl('/__notion-sync/stories')
+	);
 
 	return remote
 		? applyRemoteStories(localStories, remote)
@@ -689,7 +760,7 @@ export async function pullRemoteChanges(
 
 	try {
 		const meta = await fetchRemote<RemoteStoryMeta>(
-			'/__notion-sync/stories?meta=1'
+			listUrl('/__notion-sync/stories?meta=1')
 		);
 
 		if (!meta) {
@@ -702,7 +773,9 @@ export async function pullRemoteChanges(
 			return untouched;
 		}
 
-		const remote = await fetchRemote<RemoteStory>('/__notion-sync/stories');
+		const remote = await fetchRemote<RemoteStory>(
+			listUrl('/__notion-sync/stories')
+		);
 
 		if (!remote) {
 			return untouched;

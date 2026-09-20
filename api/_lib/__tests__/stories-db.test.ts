@@ -3,7 +3,13 @@
  *
  * @jest-environment node
  */
-import {currentDb, defaultDb} from '../stories-db';
+import {
+	currentDb,
+	defaultDb,
+	MAX_READ_DBS,
+	readDbs,
+	targetDb
+} from '../stories-db';
 import {searchStoriesDbs} from '../notion';
 import {Session} from '../session';
 
@@ -59,5 +65,59 @@ describe('currentDb', () => {
 		mockDbs.mockResolvedValue([]);
 
 		await expect(currentDb(session())).rejects.toThrow('찾지 못했습니다');
+	});
+});
+
+// 스토리별 저장 위치. 줄마다 다른 DB를 고를 수 있고, 쓰기는 ?db=로 목적지를 받는다.
+describe('targetDb', () => {
+	it('지정이 없으면 기본 저장 위치로 간다', async () => {
+		expect(await targetDb(session({dbId: 'db-default'}), undefined)).toBe(
+			'db-default'
+		);
+	});
+
+	it('지정된 DB가 통합에 공유돼 있으면 그리로 간다', async () => {
+		mockDbs.mockResolvedValue([
+			{id: 'db-default', title: 'A'},
+			{id: 'db-other', title: 'B'}
+		]);
+
+		expect(await targetDb(session({dbId: 'db-default'}), 'db-other')).toBe(
+			'db-other'
+		);
+	});
+
+	// 확인 없이 받으면 오타 하나로 스토리가 아무 데도 안 가거나 엉뚱한 곳에 쌓인다.
+	it('모르는 DB로는 쓰지 않는다', async () => {
+		mockDbs.mockResolvedValue([{id: 'db-default', title: 'A'}]);
+
+		await expect(
+			targetDb(session({dbId: 'db-default'}), 'db-typo')
+		).rejects.toThrow('찾을 수 없습니다');
+	});
+});
+
+describe('readDbs', () => {
+	it('기본 저장 위치에 따로 지정된 것들을 더한다', async () => {
+		expect(await readDbs(session({dbId: 'db-default'}), 'db-a,db-b')).toEqual([
+			'db-default',
+			'db-a',
+			'db-b'
+		]);
+	});
+
+	it('기본과 겹치거나 빈 값은 걸러 낸다', async () => {
+		expect(
+			await readDbs(session({dbId: 'db-default'}), 'db-a, ,db-default,db-a')
+		).toEqual(['db-default', 'db-a']);
+	});
+
+	// 폴링이 5초마다 DB마다 노션을 찌른다. 늘어나면 레이트 리밋에 걸린다.
+	it('상한을 넘으면 잘라 낸다', async () => {
+		const many = Array.from({length: 20}, (_, i) => `db-${i}`).join(',');
+
+		expect(await readDbs(session({dbId: 'db-default'}), many)).toHaveLength(
+			MAX_READ_DBS
+		);
 	});
 });

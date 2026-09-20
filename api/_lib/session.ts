@@ -21,7 +21,8 @@ export const LLM_KEY_MAX_AGE = 60 * 60 * 12;
 export interface Session {
 	// Notion OAuth access token.
 	token: string;
-	// 스토리를 읽고 쓰는 단 하나의 stories DB id. 저장 위치는 한 곳뿐이다 —
+	// **기본** 저장 위치. 스토리가 따로 지정하지 않으면 여기로 간다. 스토리별 지정은
+	// 세션이 아니라 클라 장부에 있다(쿠키에 목록을 쌓으면 넘친다) —
 	// api/_lib/stories-db.ts 참고.
 	dbId?: string;
 	// 루트 페이지 id (위저드에서 고름).
