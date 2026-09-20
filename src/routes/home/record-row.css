@@ -1,0 +1,50 @@
+@import '../../styles/colors.css';
+@import '../../styles/metrics.css';
+
+.record-row {
+	align-items: center;
+	border-bottom: 1px solid var(--faint-gray);
+	display: flex;
+	gap: var(--ui-gap);
+	padding: calc(var(--grid-size) * 1.2) 0;
+}
+
+.record-row:last-child {
+	border-bottom: none;
+}
+
+.record-row .month {
+	color: var(--gray);
+	flex: 0 0 3.5em;
+	font-size: 13px;
+	text-align: right;
+}
+
+.record-row .body {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	gap: 5px;
+	min-width: 0;
+}
+
+.record-row .title {
+	font-size: 16px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.record-row .meta {
+	align-items: center;
+	color: var(--dark-gray);
+	display: flex;
+	font-size: 12px;
+	gap: var(--grid-size);
+}
+
+.record-row .actions {
+	display: flex;
+	flex: 0 0 auto;
+	gap: 4px;
+}

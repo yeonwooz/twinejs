@@ -1,0 +1,60 @@
+@import '../../styles/colors.css';
+@import '../../styles/metrics.css';
+
+.record-shape {
+	align-items: center;
+	display: inline-flex;
+	gap: 4px;
+	height: var(--grid-size);
+}
+
+/* 평행우주 — 점 다발. 점 사이를 잇는 선이 허브에서 뻗어 나온 느낌을 준다. */
+.record-shape.universes .dot {
+	background: var(--blue);
+	border-radius: 50%;
+	height: 7px;
+	position: relative;
+	width: 7px;
+}
+
+.record-shape.universes .dot + .dot::before {
+	background: var(--light-gray);
+	content: '';
+	height: 1px;
+	left: -5px;
+	position: absolute;
+	top: 3px;
+	width: 4px;
+}
+
+.record-shape .overflow {
+	color: var(--dark-gray);
+	font-size: 11px;
+	margin-left: 2px;
+}
+
+/* 시나리오 — 막은 굵은 마디, 결말은 끝에서 갈라지는 가지. */
+.record-shape.acts .act {
+	background: var(--dark-gray);
+	height: 3px;
+	width: 12px;
+}
+
+.record-shape.acts .fan {
+	display: inline-flex;
+	flex-direction: column;
+	gap: 2px;
+	margin-left: 2px;
+}
+
+.record-shape.acts .ending {
+	background: var(--purple);
+	height: 2px;
+	width: 8px;
+}
+
+/* 아직 번역 안 된 초안 — 아무 갈래도 안 열렸다. */
+.record-shape.draft .dashes {
+	border-top: 2px dashed var(--gray);
+	width: 56px;
+}

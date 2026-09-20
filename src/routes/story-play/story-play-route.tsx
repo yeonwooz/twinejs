@@ -2,18 +2,22 @@ import * as React from 'react';
 import {useParams} from 'react-router-dom';
 import {usePublishing} from '../../store/use-publishing';
 import {SandboxedStoryPlayer} from '../../components/story-player';
-import {retroLinkForStory} from '../../util/retro-link';
+import {useDraftPageForStory} from '../../store/records';
+import {useStoriesContext} from '../../store/stories';
 
 export const StoryPlayRoute: React.FC = () => {
 	const {storyId} = useParams<{storyId: string}>();
 	const {publishStory} = usePublishing();
+	const {stories} = useStoriesContext();
 	const publish = React.useCallback(
 		() => publishStory(storyId),
 		[publishStory, storyId]
 	);
 
-	// 회고에서 만들어진 스토리라면 메시지를 되돌려보낼 Notion 페이지를 안다.
-	const retroLink = React.useMemo(() => retroLinkForStory(storyId), [storyId]);
+	// 회고에서 만들어진 스토리라면 메시지를 되돌려보낼 Notion 페이지를 안다. 제목이
+	// 곧 열쇠다(store/records/use-draft-page).
+	const storyName = stories.find(s => s.id === storyId)?.name;
+	const retroLink = useDraftPageForStory(storyName);
 	const [notice, setNotice] = React.useState<string>();
 	const savedRef = React.useRef<string | undefined>(undefined);
 
@@ -33,7 +37,7 @@ export const StoryPlayRoute: React.FC = () => {
 					method: 'POST',
 					credentials: 'same-origin',
 					headers: {'Content-Type': 'application/json'},
-					body: JSON.stringify({pageId: retroLink.pageId, message: text})
+					body: JSON.stringify({pageId: retroLink.id, message: text})
 				});
 
 				if (!response.ok) {

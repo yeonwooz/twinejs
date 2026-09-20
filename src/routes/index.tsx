@@ -1,11 +1,12 @@
 import * as React from 'react';
-import {HashRouter, Route, Switch} from 'react-router-dom';
+import {HashRouter, Redirect, Route, Switch} from 'react-router-dom';
+import {HomeRoute} from './home';
+import {MakeRoute} from './make';
 import {StoryEditRoute} from './story-edit';
 import {StoryListRoute} from './story-list';
 import {StoryPlayRoute} from './story-play';
 import {StoryProofRoute} from './story-proof';
 import {StoryTestRoute} from './story-test';
-import {RetroRoute} from './retro';
 import {WelcomeRoute} from './welcome';
 
 export const Routes: React.FC = () => {
@@ -14,24 +15,28 @@ export const Routes: React.FC = () => {
 	// Otherwise we'd have to store the actual location somewhere, which will
 	// differ between web and Electron contexts.
 
-	// 첫 로딩에 웰컴 투어를 강제하지 않고 바로 홈(스토리 목록)으로 보낸다.
+	// 홈은 기록(작문대 + 연대기)이다. Twine 원래의 스토리 카드 목록은 /stories로
+	// 내려갔다 — 편집기·라이브러리·빌드 기능은 그대로 살아 있다.
 	// 웰컴은 /welcome 경로로 여전히 접근 가능.
 
 	return (
 		<HashRouter>
 			<Switch>
 				<Route exact path="/">
+					<HomeRoute />
+				</Route>
+				<Route exact path="/stories">
 					<StoryListRoute />
 				</Route>
 				<Route path="/welcome">
 					<WelcomeRoute />
 				</Route>
-				<Route path="/retro">
-					<RetroRoute />
+				<Route path="/make/:pageId">
+					<MakeRoute />
 				</Route>
-				<Route path="/scenario">
-					<RetroRoute mode="scenario" />
-				</Route>
+				{/* 예전 위저드 주소. 북마크나 옛 링크를 홈으로 흘려보낸다. */}
+				<Redirect from="/retro" to="/" />
+				<Redirect from="/scenario" to="/" />
 				<Route path="/stories/:storyId/play">
 					<StoryPlayRoute />
 				</Route>
@@ -51,9 +56,9 @@ export const Routes: React.FC = () => {
 					path="*"
 					render={path => {
 						console.warn(
-							`No route for path "${path.location.pathname}", rendering story list`
+							`No route for path "${path.location.pathname}", rendering home`
 						);
-						return <StoryListRoute />;
+						return <HomeRoute />;
 					}}
 				></Route>
 			</Switch>

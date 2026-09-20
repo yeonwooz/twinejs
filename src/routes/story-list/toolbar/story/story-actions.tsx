@@ -6,9 +6,7 @@ import {CreateStoryButton} from './create-story-button';
 import {DeleteStoryButton} from './delete-story-button';
 import {DuplicateStoryButton} from './duplicate-story-button';
 import {EditStoryButton} from './edit-story-button';
-import {RetroButton} from './retro-button';
-import {ScenarioButton} from './scenario-button';
-import {StorageButton} from './storage-button';
+import {SettingsButton} from './settings-button';
 import {TagStoryButton} from './tag-story-button';
 
 export interface StoryActionsProps {
@@ -22,9 +20,7 @@ export const StoryActions: React.FC<StoryActionsProps> = props => {
 	return (
 		<ButtonBar>
 			<CreateStoryButton />
-			<RetroButton />
-			<ScenarioButton />
-			<StorageButton />
+			<SettingsButton />
 			<EditStoryButton story={selectedStory} />
 			<TagStoryButton story={selectedStory} />
 			<RenameStoryButton

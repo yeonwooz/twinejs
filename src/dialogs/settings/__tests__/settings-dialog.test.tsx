@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import {axe} from 'jest-axe';
 import * as React from 'react';
 import {DialogComponentProps} from '../../dialogs.types';
-import {NotionStorageDialog} from '../notion-storage-dialog';
+import {SettingsDialog} from '../settings-dialog';
 
 jest.mock('../../../store/persistence/notion-sync/use-sync-status', () => ({
 	useSyncStatus: () => ({connected: true, enabled: true, failing: false})
@@ -23,11 +23,23 @@ const INFO = {
 	isDefault: false
 };
 
-function mockApi(info: unknown = INFO, post: unknown = {ok: true}) {
-	const fetchMock = jest.fn(async (_url: string, opts?: RequestInit) => ({
+// 이 화면은 저장 위치(/api/notion-sync/dbs)와 AI 키(/api/llm)를 함께 다룬다.
+function mockApi(
+	info: unknown = INFO,
+	post: unknown = {ok: true},
+	llm: unknown = {provider: 'anthropic', keyExpiresInHours: 12}
+) {
+	const fetchMock = jest.fn(async (url: string, opts?: RequestInit) => ({
 		ok: true,
 		status: 200,
-		json: async () => (opts?.method === 'POST' ? post : info)
+		headers: {get: () => 'application/json'},
+		json: async () => {
+			if (String(url).includes('/api/llm')) {
+				return llm;
+			}
+
+			return opts?.method === 'POST' ? post : info;
+		}
 	}));
 
 	(global as any).fetch = fetchMock;
@@ -36,16 +48,18 @@ function mockApi(info: unknown = INFO, post: unknown = {ok: true}) {
 
 function bodyOf(fetchMock: jest.Mock) {
 	const call = fetchMock.mock.calls.find(
-		([, opts]) => (opts as RequestInit)?.method === 'POST'
+		([url, opts]) =>
+			(opts as RequestInit)?.method === 'POST' &&
+			String(url).includes('notion-sync/dbs')
 	);
 
 	return call ? JSON.parse(String((call[1] as RequestInit).body)) : undefined;
 }
 
-describe('<NotionStorageDialog>', () => {
+describe('<SettingsDialog>', () => {
 	function renderComponent(props?: Partial<DialogComponentProps>) {
 		return render(
-			<NotionStorageDialog
+			<SettingsDialog
 				collapsed={false}
 				onChangeCollapsed={jest.fn()}
 				onChangeHighlighted={jest.fn()}
@@ -153,6 +167,7 @@ describe('<NotionStorageDialog>', () => {
 		(global as any).fetch = jest.fn(async () => ({
 			ok: false,
 			status: 502,
+			headers: {get: () => 'application/json'},
 			json: async () => ({error: '노션에 연결하지 못했어요.'})
 		}));
 
@@ -160,6 +175,42 @@ describe('<NotionStorageDialog>', () => {
 		expect(
 			await screen.findByText('노션에 연결하지 못했어요.')
 		).toBeInTheDocument();
+	});
+
+	// AI 키는 예전에 위저드 안에만 있었다. 저장 위치 화면으로 먼저 들어온 사람은
+	// 키를 넣을 길이 없었다.
+	it('AI 키가 있으면 프로바이더와 만료를 알려준다', async () => {
+		mockApi();
+		renderComponent();
+
+		expect(
+			await screen.findByText(/anthropic 키가 저장돼 있어요/)
+		).toBeInTheDocument();
+		expect(screen.getByText('AI 키 삭제')).toBeInTheDocument();
+	});
+
+	it('AI 키가 없으면 여기서 바로 넣게 한다', async () => {
+		const fetchMock = mockApi(INFO, {ok: true}, {provider: null});
+
+		renderComponent();
+		await screen.findByText('AI 모델 API 키');
+		await userEvent.type(
+			screen.getByPlaceholderText('sk-ant-... / sk-...'),
+			'sk-ant-test'
+		);
+		await userEvent.click(screen.getByText('키 저장'));
+
+		await waitFor(() => {
+			const call = fetchMock.mock.calls.find(
+				([url, opts]) =>
+					String(url).includes('/api/llm') &&
+					(opts as RequestInit)?.method === 'POST'
+			);
+
+			expect(JSON.parse(String((call?.[1] as RequestInit)?.body))).toEqual({
+				key: 'sk-ant-test'
+			});
+		});
 	});
 
 	it('is accessible', async () => {

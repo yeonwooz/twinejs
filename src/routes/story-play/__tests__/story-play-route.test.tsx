@@ -4,10 +4,18 @@ import * as React from 'react';
 import {HashRouter, Route} from 'react-router-dom';
 import {usePublishing} from '../../../store/use-publishing';
 import {STORY_MESSAGE_SOURCE} from '../../../components/story-player/story-message-bridge';
-import {setRetroLinkForStory} from '../../../util/retro-link';
 import {StoryPlayRoute} from '../story-play-route';
 
 jest.mock('../../../store/use-publishing');
+
+// 초안 페이지는 제목 매칭으로 노션에서 찾아온다(store/records/use-draft-page).
+// 예전에는 localStorage 매핑이라 테스트도 그걸 심어 줬는데, 브라우저를 바꾸면
+// 통로가 조용히 끊기는 문제가 있어 없앴다.
+const draftPage = jest.fn();
+
+jest.mock('../../../store/records', () => ({
+	useDraftPageForStory: () => draftPage()
+}));
 
 describe('<StoryPlayRoute>', () => {
 	const usePublishingMock = usePublishing as jest.Mock;
@@ -45,6 +53,7 @@ describe('<StoryPlayRoute>', () => {
 
 	beforeEach(() => {
 		window.localStorage.clear();
+		draftPage.mockReturnValue(undefined);
 	});
 
 	it('replaces the DOM with a playable version of the story in :storyId', async () => {
@@ -87,7 +96,11 @@ describe('<StoryPlayRoute>', () => {
 		const fetchMock = jest.fn();
 
 		beforeEach(() => {
-			setRetroLinkForStory('123', {pageId: 'page-1', title: '7주차 회고'});
+			draftPage.mockReturnValue({
+				id: 'page-1',
+				title: '7주차 회고',
+				kind: 'retro'
+			});
 			usePublishingMock.mockReturnValue({
 				publishStory: jest.fn(() =>
 					Promise.resolve('<body>mock-published-story</body>')

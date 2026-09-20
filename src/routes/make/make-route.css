@@ -1,15 +1,20 @@
-.retro-route {
+.make-route {
 	position: fixed;
 	inset: 0;
 	display: flex;
 	justify-content: center;
 	padding: 1.5rem;
-	background: radial-gradient(ellipse at 50% 120%, #1b2a4a 0%, #0a0d1a 55%, #05060a 100%);
+	background: radial-gradient(
+		ellipse at 50% 120%,
+		#1b2a4a 0%,
+		#0a0d1a 55%,
+		#05060a 100%
+	);
 	color: #e7ecff;
 	overflow: auto;
 }
 
-.retro-card {
+.make-card {
 	/* margin:auto → 짧으면 가운데 정렬, 길면 위/아래로 스크롤 가능(잘림 방지). */
 	margin: auto;
 	width: 100%;
@@ -23,19 +28,19 @@
 	line-height: 1.7;
 }
 
-.retro-header {
+.make-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 1rem;
 	margin-bottom: 1rem;
 }
-.retro-card h1 {
+.make-card h1 {
 	margin: 0;
 	font-size: 1.5rem;
 	text-shadow: 0 0 14px rgba(120, 150, 255, 0.3);
 }
-.retro-home {
+.make-home {
 	flex: none;
 	padding: 0.4em 0.8em;
 	border-radius: 8px;
@@ -48,44 +53,26 @@
 	white-space: nowrap;
 	transition: all 0.2s;
 }
-.retro-home:hover {
+.make-home:hover {
 	border-color: #8fd0ff;
 	box-shadow: 0 0 14px rgba(143, 208, 255, 0.4);
 }
 
-.retro-new {
-	display: flex;
-	gap: 0.5rem;
-	margin: 0.5rem 0;
-}
-.retro-new input {
-	flex: 1;
-	min-width: 0;
-	background: rgba(10, 14, 30, 0.7);
-	color: #eaf0ff;
-	border: 1px solid rgba(143, 208, 255, 0.35);
-	border-radius: 8px;
-	padding: 0.5em 0.7em;
-	font: inherit;
-}
-.retro-new .retro-btn {
-	flex: none;
-}
-.retro-compose {
+.make-compose {
 	margin: 0.5rem 0;
 }
 
-.retro-model {
+.make-model {
 	display: flex;
 	flex-direction: column;
 	gap: 0.3rem;
 	margin: 0.5rem 0;
 }
-.retro-model label {
+.make-model label {
 	font-size: 0.85rem;
 	color: #9fb0dd;
 }
-.retro-model select {
+.make-model select {
 	width: 100%;
 	background: rgba(10, 14, 30, 0.7);
 	color: #eaf0ff;
@@ -95,69 +82,27 @@
 	font: inherit;
 }
 
-.retro-muted {
+.make-muted {
 	color: #9fb0dd;
 }
-.retro-spend {
+.make-spend {
 	margin: 0 0 1rem;
 	color: #9fb0dd;
 	font-size: 0.8rem;
 	line-height: 1.5;
 }
-/* 파괴적 동작이라 눈에 띄게 두지 않고, 필요할 때 찾을 수 있는 위치에만 둔다. */
-.retro-account {
-	display: flex;
-	gap: 1rem;
-	margin-top: 1.5rem;
-	padding-top: 0.8rem;
-	border-top: 1px solid rgba(143, 208, 255, 0.15);
-}
-.retro-link {
-	padding: 0;
-	border: 0;
-	background: none;
-	color: #9fb0dd;
-	font: inherit;
-	font-size: 0.8rem;
-	text-decoration: underline dotted;
-	cursor: pointer;
-}
-.retro-link:hover {
-	color: #ffb4b4;
-}
-.retro-error {
+.make-error {
 	color: #ff9fb0;
 }
-.retro-warn {
-	color: #ffd79f;
-	background: rgba(255, 190, 120, 0.08);
-	border: 1px solid rgba(255, 190, 120, 0.3);
-	border-radius: 8px;
-	padding: 0.6em 0.8em;
-	font-size: 0.9rem;
-}
-.retro-card code {
+
+.make-card code {
 	background: rgba(143, 208, 255, 0.15);
 	padding: 0.1em 0.35em;
 	border-radius: 4px;
 	font-size: 0.85em;
 }
 
-.retro-list {
-	list-style: none;
-	padding: 0;
-	margin: 0.5rem 0 0;
-	display: flex;
-	flex-direction: column;
-	gap: 0.5rem;
-}
-.retro-list button {
-	width: 100%;
-	text-align: left;
-}
-
-.retro-btn,
-.retro-list button {
+.make-btn {
 	display: inline-block;
 	padding: 0.6em 1em;
 	border-radius: 8px;
@@ -169,30 +114,29 @@
 	text-decoration: none;
 	transition: all 0.2s;
 }
-.retro-btn:hover,
-.retro-list button:hover {
+.make-btn:hover {
 	border-color: #8fd0ff;
 	box-shadow: 0 0 14px rgba(143, 208, 255, 0.4);
 }
-.retro-btn.primary {
+.make-btn.primary {
 	background: linear-gradient(135deg, #4a7bff, #8f5fff);
 	border-color: transparent;
 	font-weight: bold;
 }
-.retro-btn:disabled {
+.make-btn:disabled {
 	opacity: 0.5;
 	cursor: default;
 	box-shadow: none;
 }
 
-.retro-q,
-.retro-refine {
+.make-q,
+.make-refine {
 	margin: 0.8rem 0;
 	display: flex;
 	flex-direction: column;
 	gap: 0.3rem;
 }
-.retro-card textarea {
+.make-card textarea {
 	width: 100%;
 	background: rgba(10, 14, 30, 0.7);
 	color: #eaf0ff;
@@ -203,14 +147,14 @@
 	resize: vertical;
 }
 
-.retro-actions {
+.make-actions {
 	display: flex;
 	gap: 0.6rem;
 	margin: 0.8rem 0;
 }
 
-.retro-refine,
-.retro-message {
+.make-refine,
+.make-message {
 	margin-top: 1.5rem;
 	padding-top: 1rem;
 	border-top: 1px solid rgba(143, 208, 255, 0.2);
@@ -218,25 +162,12 @@
 	flex-direction: column;
 	gap: 0.4rem;
 }
-.retro-message .retro-btn {
+.make-message .make-btn {
 	align-self: flex-start;
 }
 
-.retro-back {
-	margin-top: 1rem;
-	background: none;
-	border: none;
-	color: #8fb0dd;
-	font: inherit;
-	cursor: pointer;
-	padding: 0.3em 0;
-	text-decoration: underline;
-}
-.retro-back:hover {
-	color: #cfe0ff;
-}
-.retro-back-row {
-	display: flex;
-	gap: 1.2rem;
-	margin-top: 0.5rem;
+/* 헤더의 부제 — 지금 무슨 초안을 빚고 있는지. */
+.make-title {
+	opacity: 0.7;
+	font-size: 0.8em;
 }

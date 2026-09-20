@@ -45,7 +45,13 @@ export async function listChildPages(token: string, pageId: string) {
 	);
 	return results
 		.filter((b: any) => b.type === 'child_page')
-		.map((b: any) => ({id: b.id, title: b.child_page.title}));
+		.map((b: any) => ({
+			id: b.id,
+			title: b.child_page.title,
+			// 홈이 초안을 "쓰다 만 지 N일"로 정렬·표시하는 데 쓴다. 블록 API가 이미
+			// 주는 값이라 추가 호출이 없다.
+			editedAt: b.last_edited_time as string | undefined
+		}));
 }
 
 // 페이지 본문 텍스트를 모은다. 하위 페이지/DB로는 파고들지 않는다.

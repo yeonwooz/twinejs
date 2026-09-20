@@ -1,0 +1,61 @@
+.settings-dialog .settings-group {
+	margin-bottom: 12px;
+}
+
+.settings-dialog .settings-group > h3 {
+	font-size: inherit;
+	font-weight: bold;
+	margin: 0 0 4px 0;
+}
+
+.settings-dialog .settings-group label {
+	display: block;
+	padding: 2px 0;
+}
+
+.settings-dialog .settings-group input {
+	margin-right: 6px;
+}
+
+.settings-dialog .settings-hint {
+	opacity: 0.75;
+}
+
+.settings-dialog .settings-note {
+	opacity: 0.6;
+	font-size: 90%;
+	margin-left: 6px;
+}
+
+.settings-dialog .settings-group {
+	max-height: 40vh;
+	overflow-y: auto;
+}
+
+/* 순차 공개 토글. 버튼처럼 보이지 않게 해서 아래 [여기에 저장하기]와 층위를 구분한다. */
+.settings-dialog .settings-disclosure {
+	background: none;
+	border: 0;
+	cursor: pointer;
+	font: inherit;
+	padding: 4px 0;
+	text-align: left;
+	text-decoration: underline;
+}
+
+.settings-dialog .settings-error {
+	color: var(--dark-red, #873741);
+}
+
+.settings-dialog .settings-key {
+	align-items: center;
+	display: flex;
+	gap: 6px;
+}
+
+.settings-dialog .settings-key input {
+	flex: 1 1 auto;
+	font: inherit;
+	min-width: 0;
+	padding: 4px;
+}

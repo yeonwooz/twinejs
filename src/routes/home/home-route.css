@@ -1,0 +1,58 @@
+@import '../../styles/colors.css';
+@import '../../styles/metrics.css';
+
+.home-route {
+	background: var(--off-white);
+	margin: 0 auto;
+	max-width: 760px;
+	min-height: 100vh;
+	padding: var(--ui-gap) var(--ui-gap) calc(var(--grid-size) * 6);
+}
+
+.home-route header {
+	align-items: center;
+	display: flex;
+	justify-content: space-between;
+	margin-bottom: calc(var(--grid-size) * 3);
+}
+
+.home-route header h1 {
+	font-size: 18px;
+	font-weight: normal;
+	letter-spacing: 0.08em;
+	margin: 0;
+}
+
+.home-header-actions {
+	align-items: center;
+	display: flex;
+	gap: 4px;
+}
+
+.home-route hr {
+	border: none;
+	border-top: 1px solid var(--light-gray);
+	margin: calc(var(--grid-size) * 3) 0 var(--grid-size);
+}
+
+.home-records {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.home-empty {
+	color: var(--dark-gray);
+	padding: calc(var(--grid-size) * 3) 0;
+	text-align: center;
+}
+
+.home-route footer {
+	margin-top: calc(var(--grid-size) * 3);
+	text-align: right;
+}
+
+.home-route footer a {
+	color: var(--dark-gray);
+	font-size: 13px;
+}

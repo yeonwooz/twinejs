@@ -20,7 +20,6 @@ import {UndoableStoriesContextProvider} from '../../store/undoable-stories';
 import {StoryListToolbar} from './toolbar/story-list-toolbar';
 import {StoryCards} from './story-cards';
 import {ClickAwayListener} from '../../components/click-away-listener';
-import {useNotionStoragePrompt} from './use-notion-storage-prompt';
 
 export const InnerStoryListRoute: React.FC = () => {
 	const {dispatch: dialogsDispatch} = useDialogsContext();
@@ -28,8 +27,6 @@ export const InnerStoryListRoute: React.FC = () => {
 	const {prefs} = usePrefsContext();
 	const {shouldShowDonationPrompt} = useDonationCheck();
 	const {t} = useTranslation();
-
-	useNotionStoragePrompt();
 
 	const selectedStories = React.useMemo(
 		() => stories.filter(story => story.selected),

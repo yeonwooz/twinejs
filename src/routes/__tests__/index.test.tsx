@@ -5,6 +5,8 @@ import {createHashHistory} from 'history';
 import {PrefsContext, PrefsContextProps} from '../../store/prefs';
 import {fakePrefs} from '../../test-util';
 
+jest.mock('../home/home-route');
+jest.mock('../make/make-route');
 jest.mock('../story-edit/story-edit-route');
 jest.mock('../story-list/story-list-route');
 jest.mock('../story-play/story-play-route');
@@ -30,13 +32,15 @@ describe('<Routes>', () => {
 		);
 	}
 
+	// 첫 로딩에 웰컴 투어를 강제하지 않는다 — 바로 홈으로 보내고, 웰컴은 /welcome으로만
+	// 간다. 예전에는 welcomeSeen이 모든 경로를 가로챘다.
 	describe("when the user doesn't have a welcomeSeen pref", () => {
-		it('shows the welcome route no matter the route', () => {
+		it('still renders the requested route', () => {
 			renderAtRoute('/stories/123', {
 				dispatch: jest.fn(),
 				prefs: fakePrefs({welcomeSeen: false})
 			});
-			expect(screen.getByTestId('mock-welcome-route')).toBeInTheDocument();
+			expect(screen.getByTestId('mock-story-edit-route')).toBeInTheDocument();
 		});
 	});
 
@@ -46,9 +50,26 @@ describe('<Routes>', () => {
 			expect(screen.getByTestId('mock-story-edit-route')).toBeInTheDocument();
 		});
 
-		it('renders the story list at /', () => {
+		// 홈은 기록(작문대 + 연대기)이다. Twine 원래 카드 목록은 /stories로 내려갔다.
+		it('renders the home route at /', () => {
 			renderAtRoute('/');
+			expect(screen.getByTestId('mock-home-route')).toBeInTheDocument();
+		});
+
+		it('renders the story list at /stories', () => {
+			renderAtRoute('/stories');
 			expect(screen.getByTestId('mock-story-list-route')).toBeInTheDocument();
+		});
+
+		it('renders the make route at /make/:pageId', () => {
+			renderAtRoute('/make/page-1');
+			expect(screen.getByTestId('mock-make-route')).toBeInTheDocument();
+		});
+
+		// 예전 위저드 주소를 북마크해 둔 사람을 홈으로 흘려보낸다.
+		it.each(['/retro', '/scenario'])('redirects %s to home', route => {
+			renderAtRoute(route);
+			expect(screen.getByTestId('mock-home-route')).toBeInTheDocument();
 		});
 
 		it('renders the story play route at /stories/:id/play', () => {
@@ -76,10 +97,10 @@ describe('<Routes>', () => {
 			expect(screen.getByTestId('mock-welcome-route')).toBeInTheDocument();
 		});
 
-		it('renders the story list route for unknown routes', () => {
+		it('renders the home route for unknown routes', () => {
 			jest.spyOn(console, 'warn').mockReturnValue();
 			renderAtRoute('/unknown-route');
-			expect(screen.getByTestId('mock-story-list-route')).toBeInTheDocument();
+			expect(screen.getByTestId('mock-home-route')).toBeInTheDocument();
 		});
 	});
 });

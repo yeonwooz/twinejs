@@ -1,25 +1,18 @@
 import {render, screen} from '@testing-library/react';
 import {axe} from 'jest-axe';
 import * as React from 'react';
-import {StorageButton} from '../storage-button';
-import {SyncStatus} from '../../../../../store/persistence/notion-sync';
+import {SyncStatusChip} from '../sync-status-chip';
+import {SyncStatus} from '../../../store/persistence/notion-sync';
 
 const status = jest.fn<SyncStatus, []>();
 
-jest.mock(
-	'../../../../../store/persistence/notion-sync/use-sync-status',
-	() => ({
-		useSyncStatus: () => status()
-	})
-);
-jest.mock('../../../../../dialogs', () => ({
-	NotionStorageDialog: () => null,
-	useDialogsContext: () => ({dispatch: jest.fn()})
+jest.mock('../../../store/persistence/notion-sync/use-sync-status', () => ({
+	useSyncStatus: () => status()
 }));
 
-// 예전에는 동기화 상태가 콘솔에만 있었다. 저장이 안 되고 있는데도 화면은 멀쩡해
-// 보이는 게 오늘 있었던 사고들의 공통점이었다.
-describe('<StorageButton>', () => {
+// 예전에는 동기화 상태가 콘솔에만, 그 다음엔 툴바 탭 안에만 있었다. 저장이 안 되고
+// 있는데도 화면은 멀쩡해 보이는 게 그때 사고들의 공통점이었다. 이제 홈 헤더에 상시로 뜬다.
+describe('<SyncStatusChip>', () => {
 	function renderWith(props: Partial<SyncStatus>) {
 		status.mockReturnValue({
 			connected: true,
@@ -27,7 +20,7 @@ describe('<StorageButton>', () => {
 			failing: false,
 			...props
 		});
-		return render(<StorageButton />);
+		return render(<SyncStatusChip onClick={jest.fn()} />);
 	}
 
 	it('돌고 있으면 저장된다고 알려준다', () => {
