@@ -8,6 +8,7 @@
 // 성립한다. 예전에 쓰던 localStorage 매핑(util/retro-link)과 달리 브라우저를 바꿔도
 // 따라온다.
 import * as React from 'react';
+import {storyLocation} from '../persistence/notion-sync';
 import {Story, useStoriesContext} from '../stories';
 import {
 	DraftKind,
@@ -157,6 +158,7 @@ export function useRecords(): UseRecordsResult {
 				pageId: draft?.id,
 				draftKind: draft?.kind,
 				shape: shapeOfStory(story),
+				location: storyLocation(story.id),
 				editedAt: story.lastUpdate
 			};
 		});

@@ -35,6 +35,8 @@ const SYNC_DEBOUNCE_MS = 3000;
 export const SCENARIO_TAG = 'scenario';
 
 let enabled: boolean | undefined;
+// 지금 저장 위치(stories DB). 홈이 스토리별로 "여긴가 저긴가"를 말하는 데 쓴다.
+let currentDbId: string | undefined;
 let lastState: StoriesState = [];
 const pendingSyncs = new Map<string, number>();
 
@@ -80,7 +82,13 @@ export function onSyncStatusChange(listener: (status: SyncStatus) => void) {
  */
 export function forgetSyncStatus() {
 	enabled = undefined;
+	currentDbId = undefined;
 	setStatus(UNKNOWN);
+}
+
+/** 지금 저장 위치의 DB id. 아직 물어보기 전이거나 미연결이면 undefined. */
+export function currentStoriesDbId() {
+	return currentDbId;
 }
 
 async function isEnabled() {
@@ -95,6 +103,7 @@ async function isEnabled() {
 			const body = response.ok ? await response.json() : undefined;
 
 			enabled = body?.enabled === true;
+			currentDbId = body?.dbId ?? undefined;
 			reason = body?.error;
 			// dev 서버 미들웨어는 connected를 주지 않는다 -- .env가 정하므로 로그인
 			// 개념이 없다. 그때는 enabled 자체를 연결로 본다.
@@ -127,6 +136,85 @@ async function errorOf(response: Response) {
 	}
 
 	return `노션 저장 실패 (${response.status})`;
+}
+
+// 스토리를 마지막으로 성공적으로 밀어 넣은 DB. 순수 정보용이다 -- 삭제 판단에 쓰는
+// 장부(SYNCED_IDS_KEY)와 섞지 않는다. 그쪽은 틀리면 스토리가 사라지는 물건이라
+// "본 적 있다"는 의미를 흐리고 싶지 않다.
+const PUSHED_DB_KEY = 'twine-notion-pushed-db';
+
+function readPushedDbs(): Record<string, string> {
+	try {
+		return JSON.parse(window.localStorage.getItem(PUSHED_DB_KEY) ?? '{}');
+	} catch {
+		return {};
+	}
+}
+
+function rememberPushedDb(storyId: string, dbId?: string) {
+	if (!dbId) {
+		return;
+	}
+
+	try {
+		window.localStorage.setItem(
+			PUSHED_DB_KEY,
+			JSON.stringify({...readPushedDbs(), [storyId]: dbId})
+		);
+	} catch {
+		// 못 적어도 진행은 막지 않는다 -- 위치 표시만 "모름"으로 떨어진다.
+	}
+}
+
+export type StoryLocation = 'here' | 'elsewhere' | 'none' | 'unknown';
+
+/**
+ * 이 스토리가 지금 저장 위치에 있나.
+ *
+ * 두 곳을 본다: 푸시 기록(방금 올린 것)과 pull 장부(원격 목록에서 본 것). 둘 다 없으면
+ * 노션에 올라간 적이 없다고 본다 -- 저장 위치를 바꾸기 전에 만든 스토리, 동기화가 꺼져
+ * 있던 동안 만든 스토리가 여기 해당한다.
+ */
+export function storyLocation(storyId: string): StoryLocation {
+	if (!enabled || !currentDbId) {
+		return 'unknown';
+	}
+
+	const seen =
+		readPushedDbs()[storyId] ??
+		readSyncedEntries().find(entry => entry.storyId === storyId)?.dbId;
+
+	if (!seen) {
+		return 'none';
+	}
+
+	return seen === currentDbId ? 'here' : 'elsewhere';
+}
+
+/**
+ * 스토리를 지금 저장 위치로 밀어 넣는다. 디바운스를 건너뛰고 결과를 돌려주는
+ * syncStory -- 홈의 "여기로 옮기기" 버튼이 성공/실패를 그 자리에서 말해야 한다.
+ *
+ * 옛 DB의 행은 지우지 않는다. 저장 위치를 바꿔도 예전 것은 남긴다는 원칙과 같고,
+ * 되돌릴 수 없는 쪽이 삭제다.
+ */
+export async function moveStoryHere(storyId: string) {
+	// 동기화가 꺼져 있으면 syncStory가 조용히 돌아선다 -- 그걸 성공으로 읽으면 안 된다.
+	// 버튼이 "옮겼다"고 말해 놓고 아무 데도 안 간 것이 이 앱이 반복해 온 사고다.
+	if (!(await isEnabled())) {
+		return {
+			ok: false as const,
+			reason:
+				status.reason ?? '노션 동기화가 꺼져 있어요. 설정을 확인해 주세요.'
+		};
+	}
+
+	cancelPendingSync(storyId);
+	await syncStory(storyId);
+
+	return status.failing
+		? {ok: false as const, reason: status.reason}
+		: {ok: true as const};
 }
 
 async function syncStory(storyId: string) {
@@ -167,6 +255,7 @@ async function syncStory(storyId: string) {
 			return;
 		}
 
+		rememberPushedDb(storyId, currentDbId);
 		setStatus({failing: false, reason: undefined});
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);

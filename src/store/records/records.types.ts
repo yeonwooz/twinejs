@@ -1,3 +1,4 @@
+import {StoryLocation} from '../persistence/notion-sync';
 import {Story} from '../stories';
 
 // 노션 초안 폴더의 종류. api/notion/retros.ts의 kind와 같은 값이다.
@@ -32,6 +33,8 @@ export interface StoryRecord {
 	pageId?: string;
 	draftKind?: DraftKind;
 	shape: RecordShape;
+	/** 지금 저장 위치에 있나. 'elsewhere'·'none'이면 홈이 옮기기 버튼을 띄운다. */
+	location: StoryLocation;
 	editedAt: Date;
 }
 

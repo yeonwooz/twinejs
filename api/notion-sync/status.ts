@@ -19,7 +19,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const s = getSession(req);
 
 	if (!s?.token) {
-		res.status(200).json({connected: false, enabled: false, chosen: false});
+		res.status(200).json({
+			chosen: false,
+			connected: false,
+			dbId: null,
+			enabled: false
+		});
 		return;
 	}
 
@@ -37,8 +42,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		}
 	}
 
+	// dbId까지 알려주는 건 홈이 스토리별로 "이건 다른 곳에 저장돼 있다"를 말하기 위해서다.
+	// 클라는 마지막으로 어느 DB에서 봤는지를 장부에 적어 두므로, 지금 DB와 비교할 수 있다.
 	res.status(200).json({
 		connected: true,
+		dbId: s.dbId ?? null,
 		enabled: !!(s.dbId || s.rootId),
 		chosen: !!s.dbId && !s.autoRoot
 	});

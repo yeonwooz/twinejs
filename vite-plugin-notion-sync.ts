@@ -312,7 +312,12 @@ export function notionSync(): Plugin {
 
 				try {
 					if (url.pathname === '/__notion-sync/status') {
-						return respond(200, {enabled: !!config});
+						// dbId는 홈이 스토리별로 "다른 곳에 저장돼 있다"를 판단하는 데 쓴다.
+						// dev에서는 .env.local이 정한 하나뿐이라 늘 같은 값이다.
+						return respond(200, {
+							dbId: config?.databaseId ?? null,
+							enabled: !!config
+						});
 					}
 
 					if (!config) {
