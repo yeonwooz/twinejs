@@ -11,7 +11,15 @@ jest.mock('../../../store/persistence/notion-sync', () => ({
 }));
 jest.mock('../use-stories-dbs', () => ({useStoriesDbs: () => dbs()}));
 
+const addDialog = jest.fn();
+
+jest.mock('../../../dialogs', () => ({
+	SettingsDialog: () => null,
+	useDialogsContext: () => ({dispatch: addDialog})
+}));
+
 const TWO_DBS = {
+	connected: true,
 	dbs: [
 		{id: 'db-retro', title: '회고 스토리'},
 		{id: 'db-fiction', title: '창작 스토리'}
@@ -23,19 +31,56 @@ describe('<StoryDbButton>', () => {
 	beforeEach(() => {
 		setStoryDb.mockReset();
 		setStoryDb.mockResolvedValue({ok: true});
+		addDialog.mockReset();
 		dbs.mockReturnValue(TWO_DBS);
 	});
 
-	// 고를 것이 없으면(미연결, DB 하나뿐) 줄에 버튼을 달지 않는다 — 목록이 버튼밭이 된다.
-	it.each([
-		['미연결', {dbs: []}],
-		['DB 하나뿐', {dbs: [{id: 'db-a', title: 'A'}], defaultDbId: 'db-a'}]
-	])('%s이면 아무것도 안 보여준다', (_label, value) => {
-		dbs.mockReturnValue(value);
+	// 버튼은 언제나 있다. 한때 "DB가 하나뿐이면 숨긴다"로 뒀다가 저장 위치가 어디에도
+	// 안 보이게 됐고, 두 번째 DB를 만들 길도 사라져 기능 자체를 찾을 수 없었다.
+	it('미연결이어도 버튼은 있고, 연결이 안 됐다고 말한다', () => {
+		dbs.mockReturnValue({connected: false, dbs: []});
 
-		const {container} = render(<StoryDbButton storyId="story-1" />);
+		render(<StoryDbButton storyId="story-1" />);
+		expect(screen.getByText('노션 연결 안 됨')).toBeInTheDocument();
+	});
 
-		expect(container).toBeEmptyDOMElement();
+	it('연결은 됐는데 DB가 없으면 없다고 말한다', () => {
+		dbs.mockReturnValue({connected: true, dbs: []});
+
+		render(<StoryDbButton storyId="story-1" />);
+		expect(screen.getByText('저장 위치 없음')).toBeInTheDocument();
+	});
+
+	it('DB가 하나뿐이어도 지금 어디 있는지는 보여준다', () => {
+		dbs.mockReturnValue({
+			connected: true,
+			dbs: [{id: 'db-a', title: '회고 스토리'}],
+			defaultDbId: 'db-a'
+		});
+
+		render(<StoryDbButton storyId="story-1" />);
+		expect(screen.getByText('회고 스토리')).toBeInTheDocument();
+	});
+
+	it('고를 게 없어도 설정으로는 갈 수 있다', async () => {
+		dbs.mockReturnValue({connected: false, dbs: []});
+
+		render(<StoryDbButton storyId="story-1" />);
+		await userEvent.click(screen.getByText('노션 연결 안 됨'));
+		await userEvent.click(screen.getByText('저장 위치 추가·변경…'));
+
+		expect(addDialog).toHaveBeenCalled();
+	});
+
+	// 둘 곳이 하나뿐일 때 두 번째를 만들 유일한 출구다.
+	it('설정으로 나가는 길을 메뉴에 둔다', async () => {
+		render(<StoryDbButton dbId="db-retro" storyId="story-1" />);
+		await userEvent.click(screen.getByText('회고 스토리'));
+		await userEvent.click(screen.getByText('저장 위치 추가·변경…'));
+
+		expect(addDialog).toHaveBeenCalledWith(
+			expect.objectContaining({type: 'addDialog'})
+		);
 	});
 
 	it('지금 어느 DB에 있는지를 버튼에 적는다', () => {

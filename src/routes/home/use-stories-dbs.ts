@@ -14,6 +14,8 @@ export interface StoriesDb {
 }
 
 interface DbsResult {
+	/** 노션에 연결돼 있나. "미연결"과 "DB가 하나도 없음"은 다른 말이다. */
+	connected: boolean;
 	dbs: StoriesDb[];
 	defaultDbId?: string;
 }
@@ -32,17 +34,20 @@ async function load(): Promise<DbsResult> {
 		const info = await fetchJson('/api/notion-sync/dbs');
 
 		return {
+			connected: !!info.connected,
 			dbs: info.options ?? [],
 			defaultDbId: info.selected?.dbId ?? undefined
 		};
 	} catch {
-		// 미연결이거나 dev 서버면 고를 것이 없다 — 줄에 버튼이 안 뜨고 끝난다.
-		return {dbs: []};
+		// 목록을 못 받아와도 버튼은 뜬다 — 그 줄에서 설정으로 갈 수 있어야 한다.
+		return {connected: false, dbs: []};
 	}
 }
 
 export function useStoriesDbs(): DbsResult {
-	const [result, setResult] = React.useState<DbsResult>(cache ?? {dbs: []});
+	const [result, setResult] = React.useState<DbsResult>(
+		cache ?? {connected: false, dbs: []}
+	);
 
 	React.useEffect(() => {
 		if (cache) {

@@ -12,6 +12,7 @@
 import {IconAlertTriangle, IconDatabase} from '@tabler/icons';
 import * as React from 'react';
 import {MenuButton} from '../../components/control/menu-button';
+import {SettingsDialog, useDialogsContext} from '../../dialogs';
 import {setStoryDb} from '../../store/persistence/notion-sync';
 import {useStoriesDbs} from './use-stories-dbs';
 import './story-db-button.css';
@@ -26,18 +27,21 @@ export const StoryDbButton: React.FC<StoryDbButtonProps> = ({
 	dbId,
 	storyId
 }) => {
-	const {dbs, defaultDbId} = useStoriesDbs();
+	const {connected, dbs, defaultDbId} = useStoriesDbs();
+	const {dispatch} = useDialogsContext();
 	const [chosen, setChosen] = React.useState(dbId);
 	const [busy, setBusy] = React.useState(false);
 	const [error, setError] = React.useState<string>();
 
-	// 고를 것이 없으면(미연결, DB 하나뿐) 줄에 버튼을 달지 않는다 — 목록이 버튼밭이 된다.
-	if (dbs.length < 2) {
-		return null;
-	}
-
 	const current = chosen ?? dbId ?? defaultDbId;
 	const currentDb = dbs.find(db => db.id === current);
+	// 버튼은 언제나 있다. 한때 "DB가 하나뿐이면 숨긴다"로 뒀다가 저장 위치가 어디에도
+	// 안 보이게 됐다 -- 줄에 적혀 있다는 게 이 화면의 요지인데 그걸 스스로 없앴고,
+	// 두 번째 DB를 만들 길도 사라져 기능 자체를 찾을 수 없었다. 고를 게 없으면
+	// 없다고 말하고, 메뉴는 설정으로 가는 문 하나만 연다.
+	const label = busy
+		? '옮기는 중…'
+		: (currentDb?.title ?? (connected ? '저장 위치 없음' : '노션 연결 안 됨'));
 
 	async function move(next: string) {
 		if (next === current) {
@@ -64,13 +68,23 @@ export const StoryDbButton: React.FC<StoryDbButtonProps> = ({
 			<MenuButton
 				disabled={busy}
 				icon={error ? <IconAlertTriangle /> : <IconDatabase />}
-				items={dbs.map(db => ({
-					checkable: true as const,
-					checked: db.id === current,
-					label: db.id === defaultDbId ? `${db.title} (기본)` : db.title,
-					onClick: () => move(db.id)
-				}))}
-				label={busy ? '옮기는 중…' : (currentDb?.title ?? '저장 위치')}
+				items={[
+					...dbs.map(db => ({
+						checkable: true as const,
+						checked: db.id === current,
+						label: db.id === defaultDbId ? `${db.title} (기본)` : db.title,
+						onClick: () => move(db.id)
+					})),
+					...(dbs.length ? [{separator: true as const}] : []),
+					{
+						// 둘 곳이 하나뿐이면 여기가 유일한 출구다. 설정에 DB를 새로 만드는
+						// 자리가 이미 있으니 그리로 보낸다.
+						label: '저장 위치 추가·변경…',
+						onClick: () =>
+							dispatch({type: 'addDialog', component: SettingsDialog})
+					}
+				]}
+				label={label}
 				variant={error ? 'danger' : undefined}
 			/>
 			{error && (
