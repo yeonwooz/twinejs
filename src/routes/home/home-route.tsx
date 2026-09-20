@@ -34,9 +34,9 @@ const InnerHomeRoute: React.FC = () => {
 
 	return (
 		<div className="home-route">
-			<DocumentTitle title="기록" />
+			<DocumentTitle title="인터랙티브 회고" />
 			<header>
-				<h1>기록</h1>
+				<h1>인터랙티브 회고</h1>
 				<div className="home-header-actions">
 					<SyncStatusChip onClick={openSettings} />
 					<IconButton

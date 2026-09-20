@@ -407,9 +407,9 @@ const InnerMakeRoute: React.FC = () => {
 					<button
 						className="make-home"
 						onClick={() => history.push('/')}
-						title="기록으로"
+						title="목록으로"
 					>
-						← 기록
+						← 목록
 					</button>
 				</div>
 
@@ -508,7 +508,7 @@ const InnerMakeRoute: React.FC = () => {
 								편집기에서 열기
 							</button>
 							<button className="make-btn" onClick={() => history.push('/')}>
-								기록으로
+								목록으로
 							</button>
 						</div>
 
@@ -575,7 +575,7 @@ const InnerMakeRoute: React.FC = () => {
 								다시 시도
 							</button>
 							<button className="make-btn" onClick={() => history.push('/')}>
-								기록으로
+								목록으로
 							</button>
 						</div>
 					</>
