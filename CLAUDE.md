@@ -130,7 +130,9 @@ OAuth·루트/DB 선택·AI 키·retros/draft/translate는 배포에서 Vercel f
 - URL → 파일(`[id].ts` 동적 구간 포함), `req.query`/`req.body`, `res.status().json()`만
   흉내 낸다. **api/ 코드는 손대지 않는다.**
 - **`.env.local`의 `NOTION_TOKEN`으로 세션 쿠키를 만들어 끼운다** — 로컬에서 노션 OAuth를
-  돌지 않아도 된다. 진짜 쿠키가 이미 있으면 건드리지 않는다.
+  돌지 않아도 된다. 쿠키가 이미 있으면 **빠진 칸만 메운다.** 한때 "있으면 아예 안
+  건드린다"였는데, 예전에 OAuth로 받아 둔 `rootId` 없는 쿠키가 남아 있으면 env를 고쳐도
+  영영 반영되지 않았다 — 헤더는 멀쩡한데 [만들기]만 막히고, 빠져나올 길이 연결 해제뿐이었다.
 - `loadEnv`는 클라 번들용이라 `process.env`에 안 올라간다. 플러그인이 옮겨 준다
   (`COOKIE_SECRET` 없다고 터지던 이유).
 - 불러올 때 **vite의 `ssrLoadModule`을 쓰지 않는다.** `nodePolyfills`가 `node:crypto`를
@@ -189,6 +191,11 @@ DB에 두고 싶다는 요구가 실제로 있었다.
 - 저장 위치는 설정(위 "설정은 한 곳")에서 고른다. 워크스페이스에 이미 있는 stories DB
   (`searchStoriesDbs`)를 라디오로 보여주고, 새로 만드는 쪽은 "› 다른 곳에 새로 만들기"로
   접어둔다(`api/notion-sync/dbs.ts`).
+- **`chosen`은 둘 다 정해졌을 때만 참이다**(`dbId` + `rootId`, 그리고 앱이 정한
+  기본값이 아닐 것). 예전엔 `dbId`만 봤는데 초안 생성(`retros.ts`)은 `rootId`를 요구해서,
+  루트 없는 사용자는 아무것도 안 물어보다가 작문대의 [만들기]에서야 막혔다 — 그동안
+  헤더는 `노션에 저장됨`이라고 말하고 있었다(sync는 `dbId`만 있으면 되니까). `enabled`는
+  그대로 `dbId` 기준이다.
 - **고르지 않아도 기본값이 있다.** 시나리오·회고 생성은 노션 연결만 요구하는데
   (`api/translate.ts`) 동기화는 저장 위치까지 요구해서, 안 고른 사람은 스토리가
   브라우저에만 남고 아무 경고도 없었다. 이제 `/__notion-sync/status`가 첫 호출에

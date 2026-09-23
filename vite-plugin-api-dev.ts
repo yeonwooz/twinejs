@@ -18,7 +18,12 @@
 //
 // 3번이 핵심이다. api 함수들은 OAuth 세션 쿠키를 보는데, 로컬에서 그걸 받으려면 노션
 // OAuth를 돌아야 한다. 토큰은 이미 .env.local에 있으니 그걸로 세션을 만들어 준다 --
-// 로그인 없이 바로 쓴다. 쿠키가 이미 있으면(정말 OAuth를 돈 경우) 건드리지 않는다.
+// 로그인 없이 바로 쓴다.
+//
+// 쿠키가 이미 있으면 **빠진 칸만 메운다.** 한때 "있으면 아예 안 건드린다"였는데, 예전에
+// OAuth로 받아 둔 rootId 없는 쿠키가 계속 남아 있으면 env를 고쳐도 영영 반영되지 않았다.
+// 헤더는 "노션에 저장됨"인데(sync는 dbId만 있으면 된다) 작문대에서 [만들기]만 막히는
+// 상태가 되고, 로컬에서는 빠져나올 길이 연결 해제밖에 없었다. 실제로 겪었다.
 import esbuild from 'esbuild';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -96,6 +101,31 @@ function resolveHandler(
 	}
 
 	return undefined;
+}
+
+// undefined·빈 값을 걷어낸다 -- 스프레드로 덮을 때 빈 값이 env 값을 지우면 안 된다.
+function clean<T extends Record<string, unknown>>(value: T) {
+	return Object.fromEntries(
+		Object.entries(value).filter(
+			([, v]) => v !== undefined && v !== null && v !== ''
+		)
+	);
+}
+
+function readSessionCookie(header?: string) {
+	return header
+		?.split(';')
+		.map(part => part.trim())
+		.find(part => part.startsWith('retro_session='))
+		?.slice('retro_session='.length);
+}
+
+function stripSessionCookie(header?: string) {
+	return (header ?? '')
+		.split(';')
+		.map(part => part.trim())
+		.filter(part => part && !part.startsWith('retro_session='))
+		.join('; ');
 }
 
 async function readBody(req: IncomingMessage) {
@@ -221,35 +251,52 @@ export function apiDev(): Plugin {
 					process.env[key] = value;
 				}
 			}
-			// 세션 쿠키를 봉인하는 seal은 api/ 코드에 있다. 핸들러와 같은 방식으로
+			// 세션을 봉인/해제하는 seal·unseal은 api/ 코드에 있다. 핸들러와 같은 방식으로
 			// 불러온다 -- vite의 SSR 로더를 쓰면 nodePolyfills 별칭에 걸린다.
-			let sealSession:
-				((session: Record<string, unknown>) => string) | undefined;
+			let sessionMod: Record<string, any> | undefined;
 
-			async function devCookie(stamp: number) {
+			// .env.local이 채워 줄 수 있는 칸들.
+			function envSession() {
+				return {
+					token: env.NOTION_TOKEN,
+					rootId: env.NOTION_RETRO_ROOT_PAGE_ID,
+					// 쉼표 목록은 첫 개만 쓴다(예전 .env.local 호환).
+					dbId: env.NOTION_STORIES_DB_ID?.split(',')[0].trim()
+				};
+			}
+
+			/**
+			 * 이 요청에 쓸 세션 쿠키. 이미 있는 쿠키는 **덮지 않고 빠진 칸만 메운다.**
+			 * 메울 게 없으면 undefined를 돌려 원래 쿠키를 그대로 쓰게 한다.
+			 */
+			async function devCookie(stamp: number, existing?: string) {
 				if (!env.NOTION_TOKEN) {
 					return undefined;
 				}
 
-				if (!sealSession) {
-					const mod = await loadHandlerModule(
+				if (!sessionMod) {
+					sessionMod = await loadHandlerModule(
 						server.config.root,
 						path.join(server.config.root, API_DIR, '_lib', 'session.ts'),
 						stamp
 					);
-
-					sealSession = mod.seal;
 				}
 
-				return sealSession!({
-					token: env.NOTION_TOKEN,
-					...(env.NOTION_RETRO_ROOT_PAGE_ID
-						? {rootId: env.NOTION_RETRO_ROOT_PAGE_ID}
-						: {}),
-					// 쉼표 목록은 첫 개만 쓴다(예전 .env.local 호환).
-					...(env.NOTION_STORIES_DB_ID
-						? {dbId: env.NOTION_STORIES_DB_ID.split(',')[0].trim()}
-						: {}),
+				const current = existing ? sessionMod.unseal(existing) : null;
+				const filled = {...envSession(), ...clean(current ?? {})};
+
+				if (
+					current &&
+					Object.entries(envSession()).every(
+						([key, value]) => !value || (current as any)[key]
+					)
+				) {
+					// 빠진 게 없다 -- 그대로 쓴다.
+					return undefined;
+				}
+
+				return sessionMod.seal({
+					...filled,
 					exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7
 				});
 			}
@@ -274,19 +321,18 @@ export function apiDev(): Plugin {
 				try {
 					const stamp = newestMtime(path.join(server.config.root, API_DIR));
 
-					// 로그인 없이 쓰도록 .env.local의 토큰으로 세션을 끼운다. 이미 쿠키가
-					// 있으면(정말 OAuth를 돈 경우) 그대로 둔다.
-					if (!req.headers.cookie?.includes('retro_session=')) {
-						const cookie = await devCookie(stamp);
+					// 로그인 없이 쓰도록 .env.local로 세션을 채운다. 이미 쿠키가 있으면
+					// 빠진 칸만 메운다.
+					const existing = readSessionCookie(req.headers.cookie);
+					const cookie = await devCookie(stamp, existing);
 
-						if (cookie) {
-							req.headers.cookie = [
-								req.headers.cookie,
-								`retro_session=${cookie}`
-							]
-								.filter(Boolean)
-								.join('; ');
-						}
+					if (cookie) {
+						req.headers.cookie = [
+							stripSessionCookie(req.headers.cookie),
+							`retro_session=${cookie}`
+						]
+							.filter(Boolean)
+							.join('; ');
 					}
 
 					const mod = await loadHandlerModule(
