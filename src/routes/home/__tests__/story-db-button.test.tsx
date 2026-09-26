@@ -9,7 +9,11 @@ const dbs = jest.fn();
 jest.mock('../../../store/persistence/notion-sync', () => ({
 	setStoryDb: (id: string, dbId: string) => setStoryDb(id, dbId)
 }));
-jest.mock('../use-stories-dbs', () => ({useStoriesDbs: () => dbs()}));
+const retry = jest.fn();
+
+jest.mock('../use-stories-dbs', () => ({
+	useStoriesDbs: () => ({...dbs(), retry})
+}));
 
 const addDialog = jest.fn();
 
@@ -32,6 +36,7 @@ describe('<StoryDbButton>', () => {
 		setStoryDb.mockReset();
 		setStoryDb.mockResolvedValue({ok: true});
 		addDialog.mockReset();
+		retry.mockReset();
 		dbs.mockReturnValue(TWO_DBS);
 	});
 
@@ -42,6 +47,25 @@ describe('<StoryDbButton>', () => {
 
 		render(<StoryDbButton storyId="story-1" />);
 		expect(screen.getByText('노션 연결 안 됨')).toBeInTheDocument();
+	});
+
+	// 네트워크가 한 번 끊긴 것을 "연결 안 됨"이라고 하면, 헤더는 "노션에 저장됨"인데
+	// 줄마다는 끊겼다고 하는 꼴이 된다. 실제로 그렇게 보였다.
+	it('목록을 못 불러온 것은 미연결과 다르게 말한다', () => {
+		dbs.mockReturnValue({connected: false, dbs: [], failed: true});
+
+		render(<StoryDbButton storyId="story-1" />);
+		expect(screen.getByText('저장 위치 확인 안 됨')).toBeInTheDocument();
+	});
+
+	it('못 불러왔으면 다시 불러올 길을 준다', async () => {
+		dbs.mockReturnValue({connected: false, dbs: [], failed: true});
+
+		render(<StoryDbButton storyId="story-1" />);
+		await userEvent.click(screen.getByText('저장 위치 확인 안 됨'));
+		await userEvent.click(screen.getByText('다시 불러오기'));
+
+		expect(retry).toHaveBeenCalled();
 	});
 
 	it('연결은 됐는데 DB가 없으면 없다고 말한다', () => {

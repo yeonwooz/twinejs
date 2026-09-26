@@ -18,6 +18,12 @@ interface DbsResult {
 	connected: boolean;
 	dbs: StoriesDb[];
 	defaultDbId?: string;
+	/**
+	 * 목록을 못 받아왔나. **"미연결"과 구별해야 한다** — 네트워크가 한 번 끊긴 것을
+	 * "노션 연결 안 됨"이라고 말하면, 헤더는 "노션에 저장됨"인데 줄마다는 연결이
+	 * 끊겼다고 하는 꼴이 된다. 실제로 그렇게 보였다.
+	 */
+	failed?: boolean;
 }
 
 let cache: DbsResult | undefined;
@@ -40,14 +46,20 @@ async function load(): Promise<DbsResult> {
 		};
 	} catch {
 		// 목록을 못 받아와도 버튼은 뜬다 — 그 줄에서 설정으로 갈 수 있어야 한다.
-		return {connected: false, dbs: []};
+		return {connected: false, dbs: [], failed: true};
 	}
 }
 
-export function useStoriesDbs(): DbsResult {
+export interface UseStoriesDbsResult extends DbsResult {
+	/** 실패한 목록을 다시 받아온다. */
+	retry: () => void;
+}
+
+export function useStoriesDbs(): UseStoriesDbsResult {
 	const [result, setResult] = React.useState<DbsResult>(
 		cache ?? {connected: false, dbs: []}
 	);
+	const [nonce, setNonce] = React.useState(0);
 
 	React.useEffect(() => {
 		if (cache) {
@@ -58,7 +70,10 @@ export function useStoriesDbs(): DbsResult {
 
 		inFlight = inFlight ?? load();
 		inFlight.then(loaded => {
-			cache = loaded;
+			// **실패는 캐시하지 않는다.** 한때 캐시했더니 로드 때 네트워크가 한 번
+			// 끊긴 것만으로 새로고침 전까지 모든 줄이 "노션 연결 안 됨"에 갇혔다.
+			cache = loaded.failed ? undefined : loaded;
+			inFlight = undefined;
 
 			if (!cancelled) {
 				setResult(loaded);
@@ -68,7 +83,13 @@ export function useStoriesDbs(): DbsResult {
 		return () => {
 			cancelled = true;
 		};
-	}, []);
+	}, [nonce]);
 
-	return result;
+	return {
+		...result,
+		retry: React.useCallback(() => {
+			forgetStoriesDbs();
+			setNonce(n => n + 1);
+		}, [])
+	};
 }

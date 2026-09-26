@@ -14,6 +14,7 @@
 // server without a token configured), the first status check disables sync
 // silently.
 
+import {humanizeError} from '../../../util/json-fetch';
 import {storyFromTwee, storyToTwee} from '../../../util/twee';
 import {
 	StoriesAction,
@@ -123,33 +124,13 @@ async function isEnabled() {
 	return enabled;
 }
 
-/**
- * 서버가 돌려준 이유를 꺼낸다. 없으면 상태 코드라도 보여준다.
- *
- * 노션 API 오류는 그대로 내보내면 JSON 덩어리가 화면에 쏟아진다 -- 실제로 목록의 한 줄을
- * 통째로 무너뜨렸다. 자주 나오는 모양은 사람 문장으로 바꾼다. 상태는 화면에 보이라고
- * 들고 있는 것이지 읽을 수 없는 걸 보여주라고 있는 게 아니다.
- */
-function humanize(message: string) {
-	if (/object_not_found|Could not find database/i.test(message)) {
-		return '그 DB를 찾을 수 없어요. 노션에서 통합에 공유돼 있는지 확인해 주세요.';
-	}
-
-	if (/unauthorized|restricted_resource/i.test(message)) {
-		return '그 DB에 쓸 권한이 없어요. 노션에서 통합에 공유해 주세요.';
-	}
-
-	// 알 수 없는 오류는 그대로 보여주되 한 줄 길이로 자른다 -- 통째로 숨기면 무슨 일이
-	// 일어났는지 알 길이 없어진다.
-	return message.length > 160 ? `${message.slice(0, 160)}…` : message;
-}
-
+/** 서버가 돌려준 이유를 꺼낸다. 없으면 상태 코드라도 보여준다. */
 async function errorOf(response: Response) {
 	try {
 		const body = await response.json();
 
 		if (body?.error) {
-			return humanize(String(body.error));
+			return humanizeError(String(body.error));
 		}
 	} catch {
 		// JSON이 아니면 상태 코드만 쓴다.

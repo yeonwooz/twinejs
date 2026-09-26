@@ -55,6 +55,7 @@ export const SettingsDialog: React.FC<DialogComponentProps> = props => {
 	const [keyError, setKeyError] = React.useState<string>();
 	const [error, setError] = React.useState<string>();
 	const [busy, setBusy] = React.useState(false);
+	const [nonce, setNonce] = React.useState(0);
 	const sync = useSyncStatus();
 
 	React.useEffect(() => {
@@ -90,7 +91,7 @@ export const SettingsDialog: React.FC<DialogComponentProps> = props => {
 		return () => {
 			cancelled = true;
 		};
-	}, []);
+	}, [nonce]);
 
 	async function save() {
 		setBusy(true);
@@ -186,7 +187,24 @@ export const SettingsDialog: React.FC<DialogComponentProps> = props => {
 			headerLabel="설정"
 		>
 			<CardContent>
-				{error && <p className="settings-error">{error}</p>}
+				{error && (
+					<p className="settings-error">
+						{error}{' '}
+						{/* 네트워크가 한 번 끊긴 것만으로 이 화면이 막다른 길이 됐다.
+						    닫았다 다시 여는 것 말고 빠져나갈 길이 없었다. */}
+						<button
+							className="settings-disclosure"
+							onClick={() => {
+								setError(undefined);
+								setInfo(undefined);
+								setNonce(n => n + 1);
+							}}
+							type="button"
+						>
+							다시 시도
+						</button>
+					</p>
+				)}
 				{/* 동기화가 꺼졌거나 실패한 이유. 헤더의 표시등은 "저장 실패"까지만 말할
 				    수 있으니, 고치러 온 이 화면에서 무엇이 문제였는지 그대로 보여준다. */}
 				{!error && sync.reason && (

@@ -27,7 +27,7 @@ export const StoryDbButton: React.FC<StoryDbButtonProps> = ({
 	dbId,
 	storyId
 }) => {
-	const {connected, dbs, defaultDbId} = useStoriesDbs();
+	const {connected, dbs, defaultDbId, failed, retry} = useStoriesDbs();
 	const {dispatch} = useDialogsContext();
 	const [chosen, setChosen] = React.useState(dbId);
 	const [busy, setBusy] = React.useState(false);
@@ -37,11 +37,21 @@ export const StoryDbButton: React.FC<StoryDbButtonProps> = ({
 	const currentDb = dbs.find(db => db.id === current);
 	// 버튼은 언제나 있다. 한때 "DB가 하나뿐이면 숨긴다"로 뒀다가 저장 위치가 어디에도
 	// 안 보이게 됐다 -- 줄에 적혀 있다는 게 이 화면의 요지인데 그걸 스스로 없앴고,
-	// 두 번째 DB를 만들 길도 사라져 기능 자체를 찾을 수 없었다. 고를 게 없으면
-	// 없다고 말하고, 메뉴는 설정으로 가는 문 하나만 연다.
-	const label = busy
-		? '옮기는 중…'
-		: (currentDb?.title ?? (connected ? '저장 위치 없음' : '노션 연결 안 됨'));
+	// 두 번째 DB를 만들 길도 사라져 기능 자체를 찾을 수 없었다.
+	//
+	// 다만 **못 불러온 것을 "연결 안 됨"이라고 말하지 않는다.** 네트워크가 한 번 끊긴
+	// 것뿐인데 그렇게 쓰면, 헤더는 "노션에 저장됨"인데 줄마다는 연결이 끊겼다고 하는
+	// 꼴이 된다(sync 상태는 세션만 보므로 네트워크와 무관하게 멀쩡하다). 실제로 그렇게
+	// 보였다.
+	function statusLabel() {
+		if (failed) {
+			return '저장 위치 확인 안 됨';
+		}
+
+		return connected ? '저장 위치 없음' : '노션 연결 안 됨';
+	}
+
+	const label = busy ? '옮기는 중…' : (currentDb?.title ?? statusLabel());
 
 	async function move(next: string) {
 		if (next === current) {
@@ -76,6 +86,8 @@ export const StoryDbButton: React.FC<StoryDbButtonProps> = ({
 						onClick: () => move(db.id)
 					})),
 					...(dbs.length ? [{separator: true as const}] : []),
+					// 못 불러온 것은 설정으로 갈 일이 아니라 다시 받아보면 되는 일이다.
+					...(failed ? [{label: '다시 불러오기', onClick: retry}] : []),
 					{
 						// 둘 곳이 하나뿐이면 여기가 유일한 출구다. 설정에 DB를 새로 만드는
 						// 자리가 이미 있으니 그리로 보낸다.

@@ -1,4 +1,4 @@
-import {ApiUnavailableError, fetchJson} from '../json-fetch';
+import {ApiUnavailableError, fetchJson, humanizeError} from '../json-fetch';
 
 function mockResponse(overrides: Record<string, unknown> = {}) {
 	(global as any).fetch = jest.fn(async () => ({
@@ -51,5 +51,30 @@ describe('fetchJson', () => {
 		await expect(fetchJson('/api/thing')).rejects.toBeInstanceOf(
 			ApiUnavailableError
 		);
+	});
+});
+
+describe('humanizeError', () => {
+	// node undici가 내는 말. 서버가 노션으로 나가는 fetch에 실패하면 이게 그대로
+	// 화면에 찍혔다 -- "fetch failed" 네 글자가 설정 화면에 떠 있었다.
+	it.each(['fetch failed', 'Failed to fetch', 'ENOTFOUND api.notion.com'])(
+		'%s 는 네트워크 문제라고 말한다',
+		message => {
+			expect(humanizeError(message)).toMatch(/네트워크를 확인/);
+		}
+	);
+
+	it('노션 API 덩어리는 한 문장으로 줄인다', () => {
+		expect(
+			humanizeError(
+				'Notion API POST /databases/x/query failed: 404 {"object":"error","code":"object_not_found"}'
+			)
+		).toMatch(/DB를 찾을 수 없어요/);
+	});
+
+	// 통째로 숨기면 무슨 일이 일어났는지 알 길이 없어진다.
+	it('모르는 오류는 남기되 한 줄 길이로 자른다', () => {
+		expect(humanizeError('무언가 이상함')).toBe('무언가 이상함');
+		expect(humanizeError('가'.repeat(300))).toHaveLength(161);
 	});
 });
