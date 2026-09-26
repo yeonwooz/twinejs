@@ -1,6 +1,11 @@
 import type {VercelRequest, VercelResponse} from '@vercel/node';
 import {getSession, writeSession} from '../_lib/session';
-import {ensureStoriesDb, searchPages, searchStoriesDbs} from '../_lib/notion';
+import {
+	ensureStoriesDb,
+	searchPages,
+	searchStoriesDbs,
+	toNotionId
+} from '../_lib/notion';
 
 // 저장 위치 고르기 화면(src/dialogs/notion-storage)이 쓰는 엔드포인트.
 //
@@ -12,6 +17,18 @@ import {ensureStoriesDb, searchPages, searchStoriesDbs} from '../_lib/notion';
 // 연결이 안 된 사용자도 여기까지는 올 수 있어야 한다. 401로 막으면 새 환경에서
 // 노션에 연결할 길이 위저드밖에 없다 — connected:false로 알려주고 화면이 연결
 // 버튼을 띄운다.
+// 세션에 적힌 id를 목록의 같은 항목에 맞춘다. 못 찾으면 원래 값을 그대로 둔다 --
+// 목록에 없는 곳을 가리키고 있다는 사실 자체가 정보다.
+function match(items: {id: string}[], id?: string) {
+	if (!id) {
+		return undefined;
+	}
+
+	const wanted = toNotionId(id);
+
+	return items.find(item => toNotionId(item.id) === wanted)?.id ?? id;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const s = getSession(req);
 
@@ -61,9 +78,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			connected: true,
 			options,
 			pages,
+			// **목록에 실제로 있는 값으로 되맞춰 준다.** 노션 id는 대시가 있는 형태
+			// (API 응답)와 없는 형태(URL에서 뽑은 것, .env.local에 적는 것)가 섞인다.
+			// 세션에 대시 없는 rootId가 들어 있으면 화면의 라디오가 영영 안 맞아서,
+			// 분명히 정해져 있는데도 "아무것도 안 고른" 것처럼 보였다. 실제로 겪었다.
 			selected: {
-				dbId: s.dbId ?? options[0]?.id ?? null,
-				rootId: s.rootId ?? null
+				dbId: match(options, s.dbId) ?? options[0]?.id ?? null,
+				rootId: match(pages, s.rootId) ?? null
 			},
 			isDefault: !!s.autoRoot || !s.dbId
 		});

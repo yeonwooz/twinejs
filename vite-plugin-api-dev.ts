@@ -251,6 +251,10 @@ export function apiDev(): Plugin {
 					process.env[key] = value;
 				}
 			}
+			// .env.local에는 노션 **링크**를 그대로 붙여넣을 수 있다(CLAUDE.md 참고).
+			// 링크나 대시 없는 형태를 그대로 세션에 넣으면 화면의 목록과 안 맞는다.
+			let toId: ((value?: string) => string | undefined) | undefined;
+
 			// 세션을 봉인/해제하는 seal·unseal은 api/ 코드에 있다. 핸들러와 같은 방식으로
 			// 불러온다 -- vite의 SSR 로더를 쓰면 nodePolyfills 별칭에 걸린다.
 			let sessionMod: Record<string, any> | undefined;
@@ -259,9 +263,9 @@ export function apiDev(): Plugin {
 			function envSession() {
 				return {
 					token: env.NOTION_TOKEN,
-					rootId: env.NOTION_RETRO_ROOT_PAGE_ID,
+					rootId: toId?.(env.NOTION_RETRO_ROOT_PAGE_ID),
 					// 쉼표 목록은 첫 개만 쓴다(예전 .env.local 호환).
-					dbId: env.NOTION_STORIES_DB_ID?.split(',')[0].trim()
+					dbId: toId?.(env.NOTION_STORIES_DB_ID?.split(',')[0].trim())
 				};
 			}
 
@@ -280,6 +284,16 @@ export function apiDev(): Plugin {
 						path.join(server.config.root, API_DIR, '_lib', 'session.ts'),
 						stamp
 					);
+				}
+
+				if (!toId) {
+					toId = (
+						await loadHandlerModule(
+							server.config.root,
+							path.join(server.config.root, API_DIR, '_lib', 'notion.ts'),
+							stamp
+						)
+					).toNotionId;
 				}
 
 				const current = existing ? sessionMod.unseal(existing) : null;
